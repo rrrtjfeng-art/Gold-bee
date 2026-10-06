@@ -12,98 +12,91 @@ import android.widget.TextView
 
 class MainActivity : Activity() {
 
-    private val background = Color.rgb(15, 15, 18)
-    private val card = Color.rgb(27, 27, 32)
-    private val white = Color.WHITE
-    private val gray = Color.rgb(180, 180, 185)
-    private val yellow = Color.rgb(255, 193, 7)
-    private val green = Color.rgb(76, 175, 80)
-    private val red = Color.rgb(244, 67, 54)
+    private val backgroundColor = Color.rgb(15, 15, 18)
+    private val cardColor = Color.rgb(27, 27, 32)
+    private val whiteColor = Color.WHITE
+    private val grayColor = Color.rgb(180, 180, 185)
+    private val yellowColor = Color.rgb(255, 193, 7)
+    private val redColor = Color.rgb(244, 67, 54)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        val scroll = ScrollView(this)
+        val scrollView = ScrollView(this)
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(24, 28, 24, 32)
-            setBackgroundColor(background)
-        }
+        val root = LinearLayout(this)
+        root.orientation = LinearLayout.VERTICAL
+        root.setPadding(24, 28, 24, 32)
+        root.setBackgroundColor(backgroundColor)
 
-        // Header
         root.addView(
-            text(
+            createText(
                 "GOLD BEE",
                 30f,
-                white,
+                whiteColor,
                 true,
                 Gravity.CENTER
             )
         )
 
         root.addView(
-            text(
+            createText(
                 "XAUUSD DECISION SYSTEM",
                 14f,
-                gray,
+                grayColor,
                 false,
                 Gravity.CENTER
             )
         )
 
-        space(root, 24)
+        addSpace(root, 24)
 
-        // Market
-        root.addView(section("MARKET"))
+        root.addView(createSection("MARKET"))
 
-        val marketCard = cardLayout()
+        val marketCard = createCard()
 
-        marketCard.addView(labelValue("Symbol", "XAUUSD"))
-        marketCard.addView(labelValue("Current Price", "---"))
-        marketCard.addView(labelValue("Market Data", "NOT CONNECTED"))
-        marketCard.addView(labelValue("Last Update", "---"))
+        marketCard.addView(createLabelValue("Symbol", "XAUUSD"))
+        marketCard.addView(createLabelValue("Current Price", "---"))
+        marketCard.addView(createLabelValue("Market Data", "NOT CONNECTED"))
+        marketCard.addView(createLabelValue("Last Update", "---"))
 
         root.addView(marketCard)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Timeframe
-        root.addView(section("TIMEFRAME"))
+        root.addView(createSection("TIMEFRAME"))
 
-        val timeframeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
+        val timeframeRow = LinearLayout(this)
+        timeframeRow.orientation = LinearLayout.HORIZONTAL
+        timeframeRow.gravity = Gravity.CENTER
 
-        timeframeRow.addView(button("H1"))
-        timeframeRow.addView(button("M15"))
-        timeframeRow.addView(button("M5"))
+        timeframeRow.addView(createButton("H1"))
+        timeframeRow.addView(createButton("M15"))
+        timeframeRow.addView(createButton("M5"))
 
         root.addView(timeframeRow)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Decision
-        root.addView(section("DECISION"))
+        root.addView(createSection("DECISION"))
 
-        val decisionCard = cardLayout()
+        val decisionCard = createCard()
 
         decisionCard.addView(
-            text(
+            createText(
                 "WAIT",
                 34f,
-                yellow,
+                yellowColor,
                 true,
                 Gravity.CENTER
             )
         )
 
         decisionCard.addView(
-            text(
+            createText(
                 "NO TRADE",
                 14f,
-                gray,
+                grayColor,
                 true,
                 Gravity.CENTER
             )
@@ -111,58 +104,56 @@ class MainActivity : Activity() {
 
         root.addView(decisionCard)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Trade setup
-        root.addView(section("TRADE SETUP"))
+        root.addView(createSection("TRADE SETUP"))
 
-        val setupCard = cardLayout()
+        val setupCard = createCard()
 
-        setupCard.addView(labelValue("Direction", "---"))
-        setupCard.addView(labelValue("Entry", "---"))
-        setupCard.addView(labelValue("Stop Loss", "---"))
-        setupCard.addView(labelValue("Take Profit", "---"))
-        setupCard.addView(labelValue("Risk : Reward", "---"))
+        setupCard.addView(createLabelValue("Direction", "---"))
+        setupCard.addView(createLabelValue("Entry", "---"))
+        setupCard.addView(createLabelValue("Stop Loss", "---"))
+        setupCard.addView(createLabelValue("Take Profit", "---"))
+        setupCard.addView(createLabelValue("Risk : Reward", "---"))
 
         root.addView(setupCard)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Analysis
-        root.addView(section("ANALYSIS"))
+        root.addView(createSection("ANALYSIS"))
 
-        val analysisCard = cardLayout()
+        val analysisCard = createCard()
 
         analysisCard.addView(
-            labelValue(
+            createLabelValue(
                 "Trend",
                 "WAITING FOR DATA"
             )
         )
 
         analysisCard.addView(
-            labelValue(
+            createLabelValue(
                 "Market Structure",
                 "WAITING FOR DATA"
             )
         )
 
         analysisCard.addView(
-            labelValue(
+            createLabelValue(
                 "Momentum",
                 "WAITING FOR DATA"
             )
         )
 
         analysisCard.addView(
-            labelValue(
+            createLabelValue(
                 "Volatility",
                 "WAITING FOR DATA"
             )
         )
 
         analysisCard.addView(
-            labelValue(
+            createLabelValue(
                 "Multi-Timeframe",
                 "WAITING FOR DATA"
             )
@@ -170,20 +161,19 @@ class MainActivity : Activity() {
 
         root.addView(analysisCard)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Reason
-        root.addView(section("REASON"))
+        root.addView(createSection("REASON"))
 
-        val reasonCard = cardLayout()
+        val reasonCard = createCard()
 
         reasonCard.addView(
-            text(
+            createText(
                 "当前没有连接真实黄金行情。\n\n" +
                         "系统不会在没有有效市场数据的情况下产生 BUY / SELL。\n\n" +
                         "等待真实数据连接。",
                 15f,
-                gray,
+                grayColor,
                 false,
                 Gravity.START
             )
@@ -191,55 +181,52 @@ class MainActivity : Activity() {
 
         root.addView(reasonCard)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Mode
-        root.addView(section("MODE"))
+        root.addView(createSection("MODE"))
 
-        val modeRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-        }
+        val modeRow = LinearLayout(this)
+        modeRow.orientation = LinearLayout.HORIZONTAL
+        modeRow.gravity = Gravity.CENTER
 
-        modeRow.addView(button("REAL"))
-        modeRow.addView(button("COPY"))
+        modeRow.addView(createButton("REAL"))
+        modeRow.addView(createButton("COPY"))
 
         root.addView(modeRow)
 
-        space(root, 20)
+        addSpace(root, 20)
 
-        // Safety
-        root.addView(section("EXECUTION SAFETY"))
+        root.addView(createSection("EXECUTION SAFETY"))
 
-        val safetyCard = cardLayout()
+        val safetyCard = createCard()
 
         safetyCard.addView(
-            labelValue(
+            createLabelValue(
                 "Automatic Order",
                 "DISABLED"
             )
         )
 
         safetyCard.addView(
-            labelValue(
+            createLabelValue(
                 "User Confirmation",
                 "REQUIRED"
             )
         )
 
         safetyCard.addView(
-            labelValue(
+            createLabelValue(
                 "MT5",
                 "NOT CONNECTED"
             )
         )
 
         safetyCard.addView(
-            text(
+            createText(
                 "本系统不会自动下单。\n" +
                         "任何真实交易都必须经过用户明确确认。",
                 14f,
-                red,
+                redColor,
                 true,
                 Gravity.CENTER
             )
@@ -247,41 +234,44 @@ class MainActivity : Activity() {
 
         root.addView(safetyCard)
 
-        space(root, 30)
+        addSpace(root, 30)
 
         root.addView(
-            text(
+            createText(
                 "GOLD BEE v1.0\nDecision Engine Foundation",
                 12f,
-                gray,
+                grayColor,
                 false,
                 Gravity.CENTER
             )
         )
 
-        scroll.addView(root)
-        setContentView(scroll)
+        scrollView.addView(root)
+
+        setContentView(scrollView)
     }
 
-    private fun section(title: String): TextView {
-        return text(
+    private fun createSection(title: String): TextView {
+        return createText(
             title,
             16f,
-            yellow,
+            yellowColor,
             true,
             Gravity.START
         )
     }
 
-    private fun cardLayout(): LinearLayout {
-        return LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(20, 18, 20, 18)
-            setBackgroundColor(card)
-        }
+    private fun createCard(): LinearLayout {
+        val card = LinearLayout(this)
+
+        card.orientation = LinearLayout.VERTICAL
+        card.setPadding(20, 18, 20, 18)
+        card.setBackgroundColor(cardColor)
+
+        return card
     }
 
-    private fun labelValue(
+    private fun createLabelValue(
         label: String,
         value: String
     ): TextView {
@@ -289,60 +279,64 @@ class MainActivity : Activity() {
 
         view.text = "$label\n$value"
         view.textSize = 15f
-        view.setTextColor(white)
+        view.setTextColor(whiteColor)
         view.setPadding(0, 8, 0, 14)
 
         return view
     }
 
-    private fun button(title: String): Button {
-        return Button(this).apply {
-            text = title
-            textSize = 14f
-            setTextColor(white)
-            setOnClickListener {
-                // 当前版本只显示界面。
-                // 后续版本会在这里接入真正的功能。
-            }
+    private fun createButton(title: String): Button {
+        val button = Button(this)
 
-            layoutParams = LinearLayout.LayoutParams(
-                0,
-                LinearLayout.LayoutParams.WRAP_CONTENT,
-                1f
-            ).apply {
-                setMargins(6, 0, 6, 0)
-            }
+        button.text = title
+        button.textSize = 14f
+        button.setTextColor(whiteColor)
+
+        button.setOnClickListener {
+            // 后续版本接入实际功能
         }
+
+        button.layoutParams = LinearLayout.LayoutParams(
+            0,
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            1f
+        ).apply {
+            setMargins(6, 0, 6, 0)
+        }
+
+        return button
     }
 
-    private fun text(
+    private fun createText(
         value: String,
         size: Float,
         color: Int,
         bold: Boolean,
-        gravity: Int
+        textGravity: Int
     ): TextView {
-        return TextView(this).apply {
-            text = value
-            textSize = size
-            setTextColor(color)
-            this.gravity = gravity
-            setPadding(0, 6, 0, 6)
+        val view = TextView(this)
 
-            if (bold) {
-                setTypeface(null, Typeface.BOLD)
-            }
+        view.text = value
+        view.textSize = size
+        view.setTextColor(color)
+        view.gravity = textGravity
+        view.setPadding(0, 6, 0, 6)
+
+        if (bold) {
+            view.setTypeface(null, Typeface.BOLD)
         }
+
+        return view
     }
 
-    private fun space(
+    private fun addSpace(
         parent: LinearLayout,
         height: Int
     ) {
-        val view = TextView(this)
+        val space = TextView(this)
 
         parent.addView(
-            view,
+            space,
             LinearLayout.LayoutParams(
                 1,
                 height
