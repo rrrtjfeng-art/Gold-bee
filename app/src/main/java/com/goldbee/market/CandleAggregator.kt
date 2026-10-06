@@ -4,9 +4,7 @@ package com.goldbee.market
  * 把实时价格 Tick 聚合成指定周期的 OHLC K 线。
  *
  * Twelve Data WebSocket 提供实时价格，
- * 不直接提供 M1/M5/M15/H1 OHLC。
- *
- * 因此 Gold Bee 在本地维护 K 线。
+ * Gold Bee 在本地维护实时 K 线。
  */
 class CandleAggregator(
     private val symbol: String
@@ -24,9 +22,6 @@ class CandleAggregator(
         }
     }
 
-    /**
-     * 放入历史 K 线。
-     */
     @Synchronized
     fun setHistoricalCandles(
         timeframe: Timeframe,
@@ -48,13 +43,6 @@ class CandleAggregator(
         currentBars.remove(timeframe)
     }
 
-    /**
-     * 接收一个实时价格。
-     *
-     * 返回值：
-     * true  = 当前周期刚刚收盘
-     * false = 仍然在当前 K 线内
-     */
     @Synchronized
     fun onPrice(
         price: Double,
@@ -71,30 +59,57 @@ class CandleAggregator(
 
             val candleStart =
                 timestampSeconds -
-                        (timestampSeconds % timeframe.seconds)
+                    (timestampSeconds % timeframe.seconds)
 
             val current =
                 currentBars[timeframe]
 
             if (current == null) {
 
-                val newCandle = Candle(
-                    symbol = symbol,
-                    timeframe = timeframe,
-                    timestamp = candleStart,
-                    open = price,
-                    high = price,
-                    low = price,
-                    close = price,
-                    volume = 0.0
-                )
+                val historicalLast =
+                    candles[timeframe]
+                        ?.lastOrNull()
 
-                currentBars[timeframe] =
-                    newCandle
+                if (
+                    historicalLast != null &&
+                    historicalLast.timestamp == candleStart
+                ) {
+
+                    currentBars[timeframe] =
+                        historicalLast.copy(
+                            high = maxOf(
+                                historicalLast.high,
+                                price
+                            ),
+                            low = minOf(
+                                historicalLast.low,
+                                price
+                            ),
+                            close = price
+                        )
+
+                    candles[timeframe]
+                        ?.removeAt(
+                            candles[timeframe]!!.lastIndex
+                        )
+
+                } else {
+
+                    currentBars[timeframe] =
+                        Candle(
+                            symbol = symbol,
+                            timeframe = timeframe,
+                            timestamp = candleStart,
+                            open = price,
+                            high = price,
+                            low = price,
+                            close = price,
+                            volume = 0.0
+                        )
+                }
 
             } else if (
-                candleStart >
-                current.timestamp
+                candleStart > current.timestamp
             ) {
 
                 candles
@@ -105,25 +120,22 @@ class CandleAggregator(
 
                 trimHistory(timeframe)
 
-                val newCandle = Candle(
-                    symbol = symbol,
-                    timeframe = timeframe,
-                    timestamp = candleStart,
-                    open = price,
-                    high = price,
-                    low = price,
-                    close = price,
-                    volume = 0.0
-                )
-
                 currentBars[timeframe] =
-                    newCandle
+                    Candle(
+                        symbol = symbol,
+                        timeframe = timeframe,
+                        timestamp = candleStart,
+                        open = price,
+                        high = price,
+                        low = price,
+                        close = price,
+                        volume = 0.0
+                    )
 
                 anyClosed = true
 
             } else if (
-                candleStart ==
-                current.timestamp
+                candleStart == current.timestamp
             ) {
 
                 currentBars[timeframe] =
@@ -144,71 +156,48 @@ class CandleAggregator(
         return anyClosed
     }
 
-    /**
-     * 返回当前已经完成的 K 线。
-     */
     @Synchronized
     fun getClosedCandles(
         timeframe: Timeframe
     ): List<Candle> {
 
-        return candles[
-            timeframe
-        ]
+        return candles[timeframe]
             ?.toList()
             .orEmpty()
     }
 
-    /**
-     * 返回当前正在形成的 K 线。
-     */
     @Synchronized
     fun getCurrentCandle(
         timeframe: Timeframe
     ): Candle? {
 
-        return currentBars[
-            timeframe
-        ]
+        return currentBars[timeframe]
     }
 
-    /**
-     * 返回历史 + 当前 K 线。
-     *
-     * 当前 K 线不应该直接用于最终闭盘确认。
-     */
     @Synchronized
     fun getCandlesIncludingCurrent(
         timeframe: Timeframe
     ): List<Candle> {
 
         val result =
-            candles[
-                timeframe
-            ]
+            candles[timeframe]
                 ?.toMutableList()
                 ?: mutableListOf()
 
-        currentBars[
-            timeframe
-        ]?.let {
+        currentBars[timeframe]?.let {
             result.add(it)
         }
 
         return result
     }
 
-    /**
-     * 获取最近一根已经收盘的 K 线。
-     */
     @Synchronized
     fun latestClosedCandle(
         timeframe: Timeframe
     ): Candle? {
 
-        return candles[
-            timeframe
-        ]?.lastOrNull()
+        return candles[timeframe]
+            ?.lastOrNull()
     }
 
     private fun trimHistory(
@@ -216,12 +205,10 @@ class CandleAggregator(
     ) {
 
         val list =
-            candles[
-                timeframe
-            ] ?: return
+            candles[timeframe]
+                ?: return
 
-        val maximum =
-            500
+        val maximum = 500
 
         if (list.size > maximum) {
 
