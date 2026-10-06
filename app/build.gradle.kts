@@ -28,4 +28,7 @@ android {
 dependencies {
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.appcompat:appcompat:1.7.0")
+
+    // OkHttp：实时 WebSocket 网络连接
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
