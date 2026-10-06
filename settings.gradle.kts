@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "GoldBee"
+rootProject.name = "Gold-bee"
 include(":app")
