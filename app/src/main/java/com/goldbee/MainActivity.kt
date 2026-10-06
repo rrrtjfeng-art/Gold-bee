@@ -18,9 +18,21 @@ class MainActivity : Activity() {
     private val grayColor = Color.rgb(180, 180, 185)
     private val yellowColor = Color.rgb(255, 193, 7)
     private val redColor = Color.rgb(244, 67, 54)
+    private val greenColor = Color.rgb(76, 175, 80)
+
+    private lateinit var priceText: TextView
+    private lateinit var dataStatusText: TextView
+    private lateinit var updateText: TextView
+    private lateinit var decisionText: TextView
+    private lateinit var reasonText: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        buildInterface()
+    }
+
+    private fun buildInterface() {
 
         val scrollView = ScrollView(this)
 
@@ -51,18 +63,54 @@ class MainActivity : Activity() {
 
         addSpace(root, 24)
 
+        // =========================
+        // MARKET
+        // =========================
+
         root.addView(createSection("MARKET"))
 
         val marketCard = createCard()
 
-        marketCard.addView(createLabelValue("Symbol", "XAUUSD"))
-        marketCard.addView(createLabelValue("Current Price", "---"))
-        marketCard.addView(createLabelValue("Market Data", "NOT CONNECTED"))
-        marketCard.addView(createLabelValue("Last Update", "---"))
+        marketCard.addView(
+            createLabelValue(
+                "Symbol",
+                "XAUUSD"
+            )
+        )
+
+        priceText = createLabelValue(
+            "Current Price",
+            "---"
+        )
+        marketCard.addView(priceText)
+
+        dataStatusText = createLabelValue(
+            "Market Data",
+            "NOT CONNECTED"
+        )
+        marketCard.addView(dataStatusText)
+
+        updateText = createLabelValue(
+            "Last Update",
+            "---"
+        )
+        marketCard.addView(updateText)
+
+        val refreshButton = createButton("REFRESH")
+
+        refreshButton.setOnClickListener {
+            refreshMarket()
+        }
+
+        marketCard.addView(refreshButton)
 
         root.addView(marketCard)
 
         addSpace(root, 20)
+
+        // =========================
+        // TIMEFRAME
+        // =========================
 
         root.addView(createSection("TIMEFRAME"))
 
@@ -70,27 +118,35 @@ class MainActivity : Activity() {
         timeframeRow.orientation = LinearLayout.HORIZONTAL
         timeframeRow.gravity = Gravity.CENTER
 
-        timeframeRow.addView(createButton("H1"))
-        timeframeRow.addView(createButton("M15"))
-        timeframeRow.addView(createButton("M5"))
+        val h1Button = createButton("H1")
+        val m15Button = createButton("M15")
+        val m5Button = createButton("M5")
+
+        timeframeRow.addView(h1Button)
+        timeframeRow.addView(m15Button)
+        timeframeRow.addView(m5Button)
 
         root.addView(timeframeRow)
 
         addSpace(root, 20)
 
+        // =========================
+        // DECISION
+        // =========================
+
         root.addView(createSection("DECISION"))
 
         val decisionCard = createCard()
 
-        decisionCard.addView(
-            createText(
-                "WAIT",
-                34f,
-                yellowColor,
-                true,
-                Gravity.CENTER
-            )
+        decisionText = createText(
+            "WAIT",
+            34f,
+            yellowColor,
+            true,
+            Gravity.CENTER
         )
+
+        decisionCard.addView(decisionText)
 
         decisionCard.addView(
             createText(
@@ -106,19 +162,56 @@ class MainActivity : Activity() {
 
         addSpace(root, 20)
 
+        // =========================
+        // TRADE SETUP
+        // =========================
+
         root.addView(createSection("TRADE SETUP"))
 
         val setupCard = createCard()
 
-        setupCard.addView(createLabelValue("Direction", "---"))
-        setupCard.addView(createLabelValue("Entry", "---"))
-        setupCard.addView(createLabelValue("Stop Loss", "---"))
-        setupCard.addView(createLabelValue("Take Profit", "---"))
-        setupCard.addView(createLabelValue("Risk : Reward", "---"))
+        setupCard.addView(
+            createLabelValue(
+                "Direction",
+                "---"
+            )
+        )
+
+        setupCard.addView(
+            createLabelValue(
+                "Entry",
+                "---"
+            )
+        )
+
+        setupCard.addView(
+            createLabelValue(
+                "Stop Loss",
+                "---"
+            )
+        )
+
+        setupCard.addView(
+            createLabelValue(
+                "Take Profit",
+                "---"
+            )
+        )
+
+        setupCard.addView(
+            createLabelValue(
+                "Risk : Reward",
+                "---"
+            )
+        )
 
         root.addView(setupCard)
 
         addSpace(root, 20)
+
+        // =========================
+        // ANALYSIS
+        // =========================
 
         root.addView(createSection("ANALYSIS"))
 
@@ -163,25 +256,33 @@ class MainActivity : Activity() {
 
         addSpace(root, 20)
 
+        // =========================
+        // REASON
+        // =========================
+
         root.addView(createSection("REASON"))
 
         val reasonCard = createCard()
 
-        reasonCard.addView(
-            createText(
-                "当前没有连接真实黄金行情。\n\n" +
-                        "系统不会在没有有效市场数据的情况下产生 BUY / SELL。\n\n" +
-                        "等待真实数据连接。",
-                15f,
-                grayColor,
-                false,
-                Gravity.START
-            )
+        reasonText = createText(
+            "系统尚未连接真实黄金行情。\n\n" +
+                    "没有有效行情数据时，系统不会产生 BUY 或 SELL。\n\n" +
+                    "当前状态：等待 Market Data Provider。",
+            15f,
+            grayColor,
+            false,
+            Gravity.START
         )
+
+        reasonCard.addView(reasonText)
 
         root.addView(reasonCard)
 
         addSpace(root, 20)
+
+        // =========================
+        // MODE
+        // =========================
 
         root.addView(createSection("MODE"))
 
@@ -189,12 +290,40 @@ class MainActivity : Activity() {
         modeRow.orientation = LinearLayout.HORIZONTAL
         modeRow.gravity = Gravity.CENTER
 
-        modeRow.addView(createButton("REAL"))
-        modeRow.addView(createButton("COPY"))
+        val realButton = createButton("REAL")
+        val copyButton = createButton("COPY")
+
+        realButton.setOnClickListener {
+            decisionText.text = "WAIT"
+            decisionText.setTextColor(yellowColor)
+
+            reasonText.text =
+                "REAL 模式\n\n" +
+                        "系统等待真实 XAUUSD 行情数据。\n\n" +
+                        "没有有效行情，不进行交易判断。"
+        }
+
+        copyButton.setOnClickListener {
+            decisionText.text = "WAIT"
+            decisionText.setTextColor(yellowColor)
+
+            reasonText.text =
+                "COPY 模式\n\n" +
+                        "需要用户输入完整黄金信号。\n\n" +
+                        "如果信号没有明确 Entry，系统将直接 NO TRADE。\n\n" +
+                        "系统不会盲目追价。"
+        }
+
+        modeRow.addView(realButton)
+        modeRow.addView(copyButton)
 
         root.addView(modeRow)
 
         addSpace(root, 20)
+
+        // =========================
+        // EXECUTION SAFETY
+        // =========================
 
         root.addView(createSection("EXECUTION SAFETY"))
 
@@ -238,7 +367,7 @@ class MainActivity : Activity() {
 
         root.addView(
             createText(
-                "GOLD BEE v1.0\nDecision Engine Foundation",
+                "GOLD BEE v1.1\nMarket Data Foundation",
                 12f,
                 grayColor,
                 false,
@@ -251,7 +380,43 @@ class MainActivity : Activity() {
         setContentView(scrollView)
     }
 
+    private fun refreshMarket() {
+
+        /*
+         * 这里故意不制造假价格。
+         *
+         * 下一阶段：
+         *
+         * MarketDataProvider
+         *        ↓
+         * MarketSnapshot
+         *        ↓
+         * Analysis Engine
+         *        ↓
+         * Decision Engine
+         *
+         * 当前先验证 UI 与数据入口。
+         */
+
+        priceText.text = "Current Price\n---"
+
+        dataStatusText.text =
+            "Market Data\nWAITING FOR PROVIDER"
+
+        updateText.text =
+            "Last Update\nWAITING"
+
+        decisionText.text = "WAIT"
+        decisionText.setTextColor(yellowColor)
+
+        reasonText.text =
+            "刷新已执行。\n\n" +
+                    "当前没有真实 XAUUSD 数据源，因此系统保持 WAIT / NO TRADE。\n\n" +
+                    "下一阶段接入真实 MarketDataProvider。"
+    }
+
     private fun createSection(title: String): TextView {
+
         return createText(
             title,
             16f,
@@ -262,6 +427,7 @@ class MainActivity : Activity() {
     }
 
     private fun createCard(): LinearLayout {
+
         val card = LinearLayout(this)
 
         card.orientation = LinearLayout.VERTICAL
@@ -275,6 +441,7 @@ class MainActivity : Activity() {
         label: String,
         value: String
     ): TextView {
+
         val view = TextView(this)
 
         view.text = "$label\n$value"
@@ -285,24 +452,24 @@ class MainActivity : Activity() {
         return view
     }
 
-    private fun createButton(title: String): Button {
+    private fun createButton(
+        title: String
+    ): Button {
+
         val button = Button(this)
 
         button.text = title
         button.textSize = 14f
         button.setTextColor(whiteColor)
 
-        button.setOnClickListener {
-            // 后续版本接入实际功能
-        }
-
-        button.layoutParams = LinearLayout.LayoutParams(
-            0,
-            LinearLayout.LayoutParams.WRAP_CONTENT,
-            1f
-        ).apply {
-            setMargins(6, 0, 6, 0)
-        }
+        button.layoutParams =
+            LinearLayout.LayoutParams(
+                0,
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                1f
+            ).apply {
+                setMargins(6, 0, 6, 0)
+            }
 
         return button
     }
@@ -314,6 +481,7 @@ class MainActivity : Activity() {
         bold: Boolean,
         textGravity: Int
     ): TextView {
+
         val view = TextView(this)
 
         view.text = value
@@ -333,6 +501,7 @@ class MainActivity : Activity() {
         parent: LinearLayout,
         height: Int
     ) {
+
         val space = TextView(this)
 
         parent.addView(
