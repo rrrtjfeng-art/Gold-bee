@@ -1,42 +1,43 @@
 package com.goldbee.decision
 
 enum class TradeDirection {
-BUY,
-SELL
+    BUY,
+    SELL
 }
 
 data class TradeSetup(
-val direction: TradeDirection,
-val entry: Double,
-val stopLoss: Double,
-val takeProfit: Double,
-val riskReward: Double,
-val reason: String
+    val direction: TradeDirection,
+    val entry: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val riskReward: Double,
+    val reason: String
 ) {
 
-fun isValid(): Boolean {
-    if (entry <= 0.0) return false
-    if (stopLoss <= 0.0) return false
-    if (takeProfit <= 0.0) return false
+    fun isValid(): Boolean {
 
-    val risk =
-        kotlin.math.abs(entry - stopLoss)
+        if (entry <= 0.0) return false
+        if (stopLoss <= 0.0) return false
+        if (takeProfit <= 0.0) return false
 
-    val reward =
-        kotlin.math.abs(takeProfit - entry)
+        val risk =
+            kotlin.math.abs(entry - stopLoss)
 
-    if (risk <= 0.0) return false
-    if (reward <= 0.0) return false
+        val reward =
+            kotlin.math.abs(takeProfit - entry)
 
-    return when (direction) {
-        TradeDirection.BUY ->
-            stopLoss < entry &&
-                    takeProfit > entry
+        if (risk <= 0.0) return false
+        if (reward <= 0.0) return false
 
-        TradeDirection.SELL ->
-            stopLoss > entry &&
-                    takeProfit < entry
+        return when (direction) {
+
+            TradeDirection.BUY ->
+                stopLoss < entry &&
+                        takeProfit > entry
+
+            TradeDirection.SELL ->
+                stopLoss > entry &&
+                        takeProfit < entry
+        }
     }
-}
-
 }
