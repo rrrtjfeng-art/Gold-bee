@@ -1,6 +1,7 @@
 package com.goldbee.decision
 
 import com.goldbee.analysis.MultiTimeframeAnalysis
+import com.goldbee.analysis.MultiTimeframeDecisionEngine
 import com.goldbee.market.Candle
 import com.goldbee.market.MarketFreshnessGuard
 import com.goldbee.market.MarketSnapshot
@@ -18,8 +19,7 @@ data class TradeDecisionGateResult(
 
 object TradeDecisionGate {
 
-    private val freshnessGuard =
-        MarketFreshnessGuard()
+    private val freshnessGuard = MarketFreshnessGuard()
 
     fun evaluate(
         snapshot: MarketSnapshot,
@@ -29,27 +29,18 @@ object TradeDecisionGate {
         riskState: RiskState = RiskState()
     ): TradeDecisionGateResult {
 
-        if (
-            !freshnessGuard.isFresh(
-                snapshot
-            )
-        ) {
-            return blocked(
-                "行情已经过期，禁止交易。"
-            )
+        if (!freshnessGuard.isFresh(snapshot)) {
+            return blocked("行情已经过期，禁止交易。")
         }
 
-        val decision =
-            MultiTimeframeDecisionEngine.decide(
-                candles = candles,
-                analysis = analysis
-            )
+        val decision = MultiTimeframeDecisionEngine.decide(
+            candles = candles,
+            analysis = analysis
+        )
 
         if (
-            decision.action !=
-            DecisionAction.BUY &&
-            decision.action !=
-            DecisionAction.SELL
+            decision.action != DecisionAction.BUY &&
+            decision.action != DecisionAction.SELL
         ) {
             return TradeDecisionGateResult(
                 decision = decision,
@@ -58,70 +49,53 @@ object TradeDecisionGate {
             )
         }
 
-        val setup =
-            decision.setup
-                ?: return blocked(
-                    "交易方案不存在。"
-                )
+        val setup = decision.setup
+            ?: return blocked("交易方案不存在。")
 
-        val atr =
-            analysis.m15.indicators.atr14
-                ?: return blocked(
-                    "M15 ATR 不可用。"
-                )
+        val atr = analysis.m15.indicators.atr14
+            ?: return blocked("M15 ATR 不可用。")
 
-        val preflight =
-            TradePreflight.check(
-                TradePreflightRequest(
-                    currentPrice =
-                        snapshot.midPrice,
-                    setup = setup,
-                    atr = atr,
-                    riskReward =
-                        setup.riskReward,
-                    limits = limits,
-                    state = riskState
-                )
+        val preflight = TradePreflight.check(
+            TradePreflightRequest(
+                currentPrice = snapshot.midPrice,
+                setup = setup,
+                atr = atr,
+                riskReward = setup.riskReward,
+                limits = limits,
+                state = riskState
             )
+        )
 
         if (!preflight.allowed) {
             return TradeDecisionGateResult(
-                decision =
-                    DecisionResult(
-                        action =
-                            DecisionAction.NO_TRADE,
-                        setup = null,
-                        confidence = 0.0,
-                        reason =
-                            preflight.reason
-                    ),
+                decision = DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = preflight.reason
+                ),
                 preflightPassed = false,
-                reason =
-                    preflight.reason
+                reason = preflight.reason
             )
         }
 
         return TradeDecisionGateResult(
             decision = decision,
             preflightPassed = true,
-            reason =
-                "交易通过行情、入场价格和风险预检查，等待用户确认。"
+            reason = "交易通过行情、入场价格和风险预检查，等待用户确认。"
         )
     }
 
     private fun blocked(
         reason: String
     ): TradeDecisionGateResult {
-
         return TradeDecisionGateResult(
-            decision =
-                DecisionResult(
-                    action =
-                        DecisionAction.NO_TRADE,
-                    setup = null,
-                    confidence = 0.0,
-                    reason = reason
-                ),
+            decision = DecisionResult(
+                action = DecisionAction.NO_TRADE,
+                setup = null,
+                confidence = 0.0,
+                reason = reason
+            ),
             preflightPassed = false,
             reason = reason
         )
