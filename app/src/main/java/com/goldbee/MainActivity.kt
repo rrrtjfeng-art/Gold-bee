@@ -178,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             textSize = 14f
             inputType = InputType.TYPE_CLASS_TEXT or
                 InputType.TYPE_TEXT_VARIATION_PASSWORD
-            singleLine = true
+            maxLines = 1
             setPadding(dp(12), dp(10), dp(12), dp(10))
             setBackgroundColor(Color.rgb(31, 37, 49))
         }
