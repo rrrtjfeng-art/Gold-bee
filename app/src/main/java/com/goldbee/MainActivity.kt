@@ -1,70 +1,78 @@
 package com.goldbee
 
-import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.text.InputType
 import android.view.Gravity
-import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.goldbee.market.RealMarketPrice
+import com.goldbee.market.RealMarketRestClient
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class MainActivity : AppCompatActivity() {
 
     private val bg = Color.rgb(9, 12, 18)
     private val panel = Color.rgb(19, 24, 34)
-    private val panel2 = Color.rgb(25, 31, 43)
     private val gold = Color.rgb(255, 193, 7)
     private val white = Color.rgb(240, 243, 250)
     private val muted = Color.rgb(145, 155, 173)
     private val green = Color.rgb(58, 210, 145)
     private val red = Color.rgb(255, 103, 112)
 
-    private lateinit var statusText: TextView
-    private lateinit var decisionText: TextView
-    private lateinit var modeText: TextView
-    private lateinit var copyInput: EditText
-    private lateinit var copyPanel: LinearLayout
+    private val client = RealMarketRestClient()
+    private val handler = Handler(Looper.getMainLooper())
+    private val prefs by lazy {
+        getSharedPreferences("gold_bee_settings", MODE_PRIVATE)
+    }
 
-    private var currentMode = "REAL"
+    private lateinit var apiKeyInput: EditText
+    private lateinit var statusText: TextView
+    private lateinit var priceText: TextView
+    private lateinit var bidAskText: TextView
+    private lateinit var candleText: TextView
+    private lateinit var updateText: TextView
+    private lateinit var modeText: TextView
+
+    private var polling = false
+    private var requestInProgress = false
+
+    private val pollInterval = 10 * 60 * 1000L
+
+    private val pollRunnable = object : Runnable {
+        override fun run() {
+            if (!polling) return
+
+            fetchPrice()
+
+            handler.postDelayed(this, pollInterval)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         window.statusBarColor = bg
         window.navigationBarColor = bg
-        window.decorView.systemUiVisibility = 0
 
         buildScreen()
     }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun dp(v: Int): Int =
+        (v * resources.displayMetrics.density).toInt()
 
-    private fun rounded(
-        color: Int,
-        radius: Int = 16,
-        strokeColor: Int = Color.TRANSPARENT
-    ): GradientDrawable {
-        return GradientDrawable().apply {
-            setColor(color)
-            cornerRadius = dp(radius).toFloat()
-            if (strokeColor != Color.TRANSPARENT) {
-                setStroke(dp(1), strokeColor)
-            }
-        }
-    }
-
-    private fun text(
+    private fun makeText(
         value: String,
-        size: Float = 14f,
-        color: Int = white,
+        size: Float,
+        color: Int,
         bold: Boolean = false
     ): TextView {
         return TextView(this).apply {
@@ -72,476 +80,360 @@ class MainActivity : AppCompatActivity() {
             textSize = size
             setTextColor(color)
             if (bold) {
-                typeface = Typeface.DEFAULT_BOLD
+                setTypeface(null, android.graphics.Typeface.BOLD)
             }
-            setLineSpacing(dp(3).toFloat(), 1f)
+            setPadding(0, dp(3), 0, dp(3))
         }
     }
 
-    private fun vertical(): LinearLayout =
+    private fun makeCard(): LinearLayout =
         LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(15), dp(16), dp(15))
+            setBackgroundColor(panel)
+            layoutParams = LinearLayout.LayoutParams(
+                -1, -2
+            ).apply {
+                bottomMargin = dp(12)
+            }
         }
 
-    private fun horizontal(): LinearLayout =
-        LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-
-    private fun addText(
+    private fun addLabel(
         parent: LinearLayout,
         value: String,
-        size: Float = 14f,
-        color: Int = white,
-        bold: Boolean = false,
-        bottom: Int = 8
+        size: Float = 13f,
+        color: Int = muted,
+        bold: Boolean = false
     ): TextView {
-        val view = text(value, size, color, bold)
+        val view = makeText(value, size, color, bold)
         parent.addView(
             view,
-            LinearLayout.LayoutParams(
-                -1,
-                -2
-            ).apply {
-                bottomMargin = dp(bottom)
+            LinearLayout.LayoutParams(-1, -2).apply {
+                bottomMargin = dp(6)
             }
         )
         return view
     }
 
-    private fun card(): LinearLayout =
-        vertical().apply {
-            background = rounded(panel, 18)
-            setPadding(dp(16), dp(16), dp(16), dp(16))
-            layoutParams = LinearLayout.LayoutParams(
-                -1,
-                -2
-            ).apply {
-                bottomMargin = dp(14)
-            }
-        }
-
     private fun addButton(
         parent: LinearLayout,
-        label: String,
-        onClick: () -> Unit,
-        primary: Boolean = false
-    ): Button {
+        value: String,
+        primary: Boolean = false,
+        action: () -> Unit
+    ) {
         val button = Button(this).apply {
-            text = label
-            textSize = 13f
+            text = value
             isAllCaps = false
+            textSize = 12f
             setTextColor(if (primary) bg else white)
-            background = rounded(
-                if (primary) gold else panel2,
-                12
-            )
-            setPadding(dp(10), dp(4), dp(10), dp(4))
-            setOnClickListener { onClick() }
+            setBackgroundColor(if (primary) gold else Color.rgb(39, 46, 59))
+            setOnClickListener { action() }
         }
 
         parent.addView(
             button,
             LinearLayout.LayoutParams(
-                0,
-                dp(48),
-                1f
+                0, dp(48), 1f
             ).apply {
-                marginEnd = dp(8)
+                marginEnd = dp(6)
             }
         )
-        return button
     }
 
     private fun buildScreen() {
         val scroll = ScrollView(this).apply {
             setBackgroundColor(bg)
-            isFillViewport = true
         }
 
-        val root = vertical().apply {
-            setPadding(dp(18), dp(18), dp(18), dp(24))
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(18), dp(16), dp(22))
         }
 
         scroll.addView(root)
         setContentView(scroll)
 
-        // Header
-        val header = horizontal()
-
-        val brand = vertical()
-        brand.addView(text("GOLD BEE", 25f, gold, true))
-        brand.addView(
-            text(
-                "XAUUSD ANALYSIS TERMINAL",
-                10f,
-                muted,
-                true
-            )
-        )
-
-        header.addView(
-            brand,
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-
-        val version = text("MOBILE", 11f, muted, true).apply {
-            background = rounded(panel2, 10)
-            setPadding(dp(12), dp(8), dp(12), dp(8))
-        }
-        header.addView(version)
-        root.addView(header)
-
-        addText(
+        addLabel(root, "GOLD BEE", 27f, gold, true)
+        addLabel(root, "XAUUSD · MARKET ANALYSIS TERMINAL", 11f)
+        addLabel(
             root,
-            "你的黄金市场分析工作台",
+            "真实行情接入测试版",
             13f,
-            muted,
-            false,
-            18
+            white
         )
 
-        // Connection status
-        val connection = card()
-        val connectionRow = horizontal()
-
-        val dot = text("●", 12f, gold, true)
-        connectionRow.addView(dot)
-
-        statusText = text("行情尚未连接", 14f, white, true)
-        connectionRow.addView(
-            statusText,
-            LinearLayout.LayoutParams(0, -2, 1f).apply {
-                marginStart = dp(8)
-            }
+        // API Key settings
+        val settings = makeCard()
+        addLabel(settings, "行情连接设置", 17f, white, true)
+        addLabel(
+            settings,
+            "填写 RealMarketAPI 的 API Key。密钥只保存在此设备的应用设置中。",
+            12f
         )
 
-        connection.addView(connectionRow)
-        addText(
-            connection,
-            "当前没有真实行情数据。交易分析将在有效数据接入后启用。",
-            12f,
-            muted,
-            false,
-            12
-        )
-
-        val connectionButtons = horizontal()
-        addButton(
-            connectionButtons,
-            "连接行情",
-            {
-                statusText.text = "等待配置行情源"
-                decisionText.text = "NO TRADE"
-                modeText.text =
-                    "尚未连接真实行情，暂不生成交易建议。"
-            },
-            true
-        )
-        addButton(
-            connectionButtons,
-            "停止",
-            {
-                statusText.text = "行情已停止"
-                decisionText.text = "NO TRADE"
-                modeText.text = "行情已停止，等待重新连接。"
-            }
-        )
-        connection.addView(connectionButtons)
-        root.addView(connection)
-
-        // Market quote
-        val quote = card()
-        addText(quote, "黄金行情 / GOLD SPOT", 12f, muted, true, 12)
-        addText(quote, "XAU / USD", 14f, white, true, 2)
-        addText(quote, "等待真实报价", 28f, gold, true, 4)
-        addText(quote, "买价  —       卖价  —", 13f, muted, false, 4)
-        addText(quote, "点差  —       更新时间  —", 12f, muted, false, 0)
-        root.addView(quote)
-
-        // REAL / COPY modes
-        val modeCard = card()
-        addText(modeCard, "分析模式", 16f, white, true, 12)
-
-        val modes = horizontal()
-        addButton(
-            modes,
-            "REAL · 实时分析",
-            {
-                currentMode = "REAL"
-                updateMode()
-            },
-            true
-        )
-        addButton(
-            modes,
-            "COPY · 信号复核",
-            {
-                currentMode = "COPY"
-                updateMode()
-            }
-        )
-        modeCard.addView(modes)
-
-        modeText = addText(
-            modeCard,
-            "REAL：根据真实市场数据评估行情。当前行情未接通。",
-            12f,
-            muted,
-            false,
-            0
-        )
-        root.addView(modeCard)
-
-        // Chart
-        val chart = card()
-        addText(chart, "价格结构 / PRICE ACTION", 16f, white, true, 4)
-        addText(
-            chart,
-            "K 线图区域 · 等待真实历史 K 线",
-            12f,
-            muted,
-            false,
-            10
-        )
-
-        chart.addView(
-            ChartPlaceholder(this),
-            LinearLayout.LayoutParams(-1, dp(190))
-        )
-
-        addText(
-            chart,
-            "未接入真实 K 线，不显示模拟价格或虚构走势。",
-            11f,
-            muted,
-            false,
-            0
-        )
-        root.addView(chart)
-
-        // Indicators
-        val indicators = card()
-        addText(indicators, "技术指标", 16f, white, true, 14)
-
-        addMetric(indicators, "EMA 9 / 20 / 50 / 200", "—")
-        addMetric(indicators, "RSI 14", "—")
-        addMetric(indicators, "MACD / Signal / Histogram", "—")
-        addMetric(indicators, "ADX 14 / ATR 14", "—")
-        addMetric(indicators, "VWAP", "—")
-        root.addView(indicators)
-
-        // Structure
-        val structure = card()
-        addText(structure, "市场结构", 16f, white, true, 14)
-        addMetric(structure, "趋势方向", "未知")
-        addMetric(structure, "趋势强度", "—")
-        addMetric(structure, "支撑区域", "—")
-        addMetric(structure, "阻力区域", "—")
-        root.addView(structure)
-
-        // Decision
-        val decision = card()
-        addText(decision, "交易决策 / TRADE PLAN", 16f, white, true, 10)
-
-        decisionText = text("NO TRADE", 26f, red, true).apply {
-            background = rounded(panel2, 12)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-        }
-        decision.addView(
-            decisionText,
-            LinearLayout.LayoutParams(-1, -2).apply {
-                bottomMargin = dp(12)
-            }
-        )
-
-        addMetric(decision, "Entry · 入场", "—")
-        addMetric(decision, "SL · 止损", "—")
-        addMetric(decision, "TP · 止盈", "—")
-        addMetric(decision, "Risk : Reward · 风险回报比", "—")
-        addMetric(decision, "仓位风险", "未计算")
-
-        addText(decision, "判断理由", 13f, gold, true, 5)
-        addText(
-            decision,
-            "当前没有经过验证的实时行情，因此不会给出虚构的买卖方向、入场价或止损止盈。",
-            12f,
-            muted,
-            false,
-            0
-        )
-        root.addView(decision)
-
-        // Copy signal input
-        copyPanel = card()
-        addText(copyPanel, "COPY 信号复核", 16f, white, true, 6)
-        addText(
-            copyPanel,
-            "粘贴别人提供的黄金信号。接入行情后，再检查方向、入场价与当前价格是否仍然匹配。",
-            12f,
-            muted,
-            false,
-            10
-        )
-
-        copyInput = EditText(this).apply {
-            hint = "例如：XAUUSD BUY Entry 4000 SL 3990 TP 4020"
+        apiKeyInput = EditText(this).apply {
+            hint = "输入 API Key"
             setHintTextColor(muted)
             setTextColor(white)
-            textSize = 13f
-            gravity = Gravity.TOP
-            minLines = 3
-            setPadding(dp(12), dp(12), dp(12), dp(12))
-            background = rounded(panel2, 12)
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_TEXT or
+                InputType.TYPE_TEXT_VARIATION_PASSWORD
+            singleLine = true
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(31, 37, 49))
         }
 
-        copyPanel.addView(
-            copyInput,
-            LinearLayout.LayoutParams(-1, -2).apply {
+        settings.addView(
+            apiKeyInput,
+            LinearLayout.LayoutParams(-1, dp(52)).apply {
                 bottomMargin = dp(10)
             }
         )
 
-        val reviewButton = Button(this).apply {
-            text = "复核信号"
-            isAllCaps = false
-            setTextColor(bg)
-            background = rounded(gold, 12)
-            setOnClickListener {
-                val signal = copyInput.text.toString().trim()
+        val savedKey = prefs.getString("api_key", "").orEmpty()
+        if (savedKey.isNotBlank()) {
+            apiKeyInput.hint = "已保存 API Key；留空可继续使用"
+        }
 
-                modeText.text = "COPY：已提交信号复核请求。"
+        val saveRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
 
-                if (signal.isEmpty()) {
-                    decisionText.text = "NO TRADE"
-                    statusText.text = "请先粘贴信号"
-                } else {
-                    decisionText.text = "NO TRADE"
-                    statusText.text = "等待行情源接入"
-                    modeText.text =
-                        "已填写信号，但尚无真实行情可验证其入场有效性。禁止盲目跟单。"
-                }
+        addButton(saveRow, "保存并测试", true) {
+            val entered = apiKeyInput.text.toString().trim()
+
+            if (entered.isNotBlank()) {
+                prefs.edit().putString("api_key", entered).apply()
+            }
+
+            if (getApiKey().isBlank()) {
+                statusText.text = "状态：请先输入 API Key"
+            } else {
+                fetchPrice()
             }
         }
 
-        copyPanel.addView(
-            reviewButton,
-            LinearLayout.LayoutParams(-1, dp(48))
-        )
-        root.addView(copyPanel)
-        copyPanel.visibility = View.GONE
-
-        // Safety footer
-        val footer = vertical().apply {
-            setPadding(dp(4), dp(4), dp(4), dp(10))
+        addButton(saveRow, "刷新报价") {
+            fetchPrice()
         }
 
-        addText(
-            footer,
-            "执行规则",
-            13f,
+        settings.addView(saveRow)
+        root.addView(settings)
+
+        // Status
+        val statusCard = makeCard()
+        addLabel(statusCard, "连接状态", 14f, muted, true)
+
+        statusText = addLabel(
+            statusCard,
+            "状态：等待 API Key",
+            16f,
             gold,
-            true,
-            5
+            true
         )
-        addText(
-            footer,
-            "Gold Bee 负责分析与风险提示，不自动下单。所有真实订单由你在 MT5 中自行确认。",
+
+        addLabel(
+            statusCard,
+            "自动查询间隔：10 分钟。每次查询都会消耗 API 请求额度。",
+            11f
+        )
+
+        val pollRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        addButton(pollRow, "开始定时更新", true) {
+            if (getApiKey().isBlank()) {
+                statusText.text = "状态：请先保存 API Key"
+            } else if (!polling) {
+                polling = true
+                fetchPrice()
+                handler.postDelayed(pollRunnable, pollInterval)
+                statusText.text = "状态：已启动定时查询"
+            }
+        }
+
+        addButton(pollRow, "停止更新") {
+            polling = false
+            handler.removeCallbacks(pollRunnable)
+            statusText.text = "状态：已停止定时查询"
+        }
+
+        statusCard.addView(pollRow)
+        root.addView(statusCard)
+
+        // Quote
+        val quote = makeCard()
+        addLabel(quote, "XAU / USD", 14f, muted, true)
+
+        priceText = addLabel(
+            quote,
+            "等待真实报价",
+            31f,
+            gold,
+            true
+        )
+
+        bidAskText = addLabel(
+            quote,
+            "Bid：—       Ask：—",
+            14f,
+            white,
+            true
+        )
+
+        addLabel(quote, "OHLC · 最近完成的 K 线", 12f, muted, true)
+
+        candleText = addLabel(
+            quote,
+            "Open：—\nHigh：—\nLow：—\nClose：—",
+            13f,
+            white
+        )
+
+        updateText = addLabel(
+            quote,
+            "数据时间：尚未获取",
+            11f,
+            muted
+        )
+
+        root.addView(quote)
+
+        // Analysis status
+        val analysis = makeCard()
+        addLabel(analysis, "技术分析", 17f, white, true)
+        addLabel(
+            analysis,
+            "EMA 9 / 20 / 50 / 200：等待历史 K 线",
+            12f
+        )
+        addLabel(analysis, "RSI / MACD / ADX / ATR：待接入", 12f)
+        addLabel(analysis, "支撑 / 阻力：待计算", 12f)
+        root.addView(analysis)
+
+        // Trade decision
+        val decision = makeCard()
+        addLabel(decision, "交易决策", 17f, white, true)
+        addLabel(decision, "NO TRADE", 25f, red, true)
+        addLabel(
+            decision,
+            "仅获取到报价并不代表交易信号成立。历史数据、指标和风险验证完成前，不生成买卖建议。",
+            12f
+        )
+        addLabel(
+            decision,
+            "不自动下单。真实交易仍由你在 MT5 中决定。",
             12f,
-            muted,
-            false,
-            5
+            gold
         )
-        addText(
-            footer,
-            "当前版本：主界面框架 · 实时行情尚未接通",
+        root.addView(decision)
+
+        modeText = addLabel(
+            root,
+            "版本：REST 行情连接测试",
+            11f,
+            muted
+        )
+
+        addLabel(
+            root,
+            "注意：API Key 保存在本机应用设置中，但 Android 本地存储不是专业密钥保险库。不要把密钥提交到 GitHub。",
             10f,
-            muted,
-            false,
-            0
-        )
-        root.addView(footer)
-    }
-
-    private fun addMetric(
-        parent: LinearLayout,
-        label: String,
-        value: String
-    ) {
-        val row = horizontal().apply {
-            setPadding(0, dp(8), 0, dp(8))
-        }
-
-        row.addView(
-            text(label, 12f, muted),
-            LinearLayout.LayoutParams(0, -2, 1f)
-        )
-
-        row.addView(
-            text(value, 12f, white, true).apply {
-                gravity = Gravity.END
-            }
-        )
-
-        parent.addView(row)
-        parent.addView(
-            View(this).apply {
-                setBackgroundColor(Color.rgb(39, 46, 59))
-            },
-            LinearLayout.LayoutParams(-1, dp(1))
+            muted
         )
     }
 
-    private fun updateMode() {
-        if (currentMode == "REAL") {
-            copyPanel.visibility = View.GONE
-            modeText.text =
-                "REAL：根据真实市场数据评估行情。当前行情未接通。"
-        } else {
-            copyPanel.visibility = View.VISIBLE
-            modeText.text =
-                "COPY：复核外部信号。没有实时行情和明确入场价时，不跟单。"
+    private fun getApiKey(): String {
+        val typed = apiKeyInput.text.toString().trim()
+        if (typed.isNotBlank()) return typed
+
+        return prefs.getString("api_key", "").orEmpty()
+    }
+
+    private fun fetchPrice() {
+        val key = getApiKey()
+
+        if (key.isBlank()) {
+            statusText.text = "状态：请先输入 API Key"
+            return
+        }
+
+        if (requestInProgress) {
+            statusText.text = "状态：正在请求行情"
+            return
+        }
+
+        requestInProgress = true
+        statusText.text = "状态：正在连接 RealMarketAPI…"
+
+        client.fetchPrice(
+            apiKey = key,
+            symbol = "XAUUSD",
+            timeframe = "M1"
+        ) { result ->
+
+            requestInProgress = false
+
+            result.onSuccess { quote ->
+                showPrice(quote)
+            }.onFailure { error ->
+                statusText.text = "状态：请求失败"
+                priceText.text = "暂无有效报价"
+                updateText.text =
+                    error.message ?: "未知错误"
+            }
         }
     }
 
-    private inner class ChartPlaceholder(
-        context: android.content.Context
-    ) : View(context) {
+    private fun showPrice(q: RealMarketPrice) {
+        statusText.text = "状态：已取得行情响应"
+        statusText.setTextColor(green)
 
-        private val gridPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(37, 44, 57)
-            strokeWidth = dp(1).toFloat()
-        }
+        priceText.text = String.format(
+            Locale.US,
+            "%.2f",
+            q.close
+        )
 
-        private val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = muted
-            textSize = dp(12).toFloat()
-            textAlign = Paint.Align.CENTER
-        }
+        val spread = q.spread?.let {
+            String.format(Locale.US, "%.3f", it)
+        } ?: "—"
 
-        override fun onDraw(canvas: Canvas) {
-            super.onDraw(canvas)
+        bidAskText.text = String.format(
+            Locale.US,
+            "Bid：%s       Ask：%s       Spread：%s",
+            q.bid?.let { String.format(Locale.US, "%.3f", it) } ?: "—",
+            q.ask?.let { String.format(Locale.US, "%.3f", it) } ?: "—",
+            spread
+        )
 
-            val w = width.toFloat()
-            val h = height.toFloat()
+        candleText.text = String.format(
+            Locale.US,
+            "Open：%.3f\nHigh：%.3f\nLow：%.3f\nClose：%.3f\nVolume：%s",
+            q.open,
+            q.high,
+            q.low,
+            q.close,
+            q.volume?.toString() ?: "—"
+        )
 
-            for (i in 1..4) {
-                val y = h * i / 5f
-                canvas.drawLine(0f, y, w, y, gridPaint)
-            }
+        updateText.text =
+            "K 线时间（UTC）：${q.openTime}\n" +
+            "本机获取时间：${
+                SimpleDateFormat(
+                    "yyyy-MM-dd HH:mm:ss",
+                    Locale.getDefault()
+                ).format(Date())
+            }"
 
-            for (i in 1..5) {
-                val x = w * i / 6f
-                canvas.drawLine(x, 0f, x, h, gridPaint)
-            }
+        modeText.text =
+            "已取得 ${q.symbol} 的接口数据。请核对报价与 K 线时间。"
+    }
 
-            canvas.drawText(
-                "等待真实行情数据",
-                w / 2f,
-                h / 2f,
-                labelPaint
-            )
-        }
+    override fun onDestroy() {
+        polling = false
+        handler.removeCallbacks(pollRunnable)
+        super.onDestroy()
     }
 }
