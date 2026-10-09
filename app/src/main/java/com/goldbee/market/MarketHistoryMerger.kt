@@ -42,6 +42,7 @@ object MarketHistoryMerger {
         }
 
         return byTimestamp.values
+            .toList()
             .takeLast(maximumCandles)
     }
 }
