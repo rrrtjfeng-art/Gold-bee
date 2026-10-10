@@ -73,6 +73,14 @@ class Mt5ScreenCaptureService : Service() {
             return START_NOT_STICKY
         }
 
+        if (projection != null) {
+            getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(KEY_OCR_STATUS, "屏幕 OCR 已在运行；请先停止当前会话再重新授权。")
+                .apply()
+            return START_NOT_STICKY
+        }
+
         try {
             startCapture(resultCode, resultData)
         } catch (_: Exception) {
