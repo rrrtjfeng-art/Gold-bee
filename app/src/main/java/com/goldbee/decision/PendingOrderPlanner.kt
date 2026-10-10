@@ -42,9 +42,9 @@ data class PendingOrderPlan(
 }
 
 /**
- * Builds a pending-order alternative from a directionally confirmed setup.
- * It does not establish direction by itself and must not bypass the main
- * decision gate, live quote checks, broker stop-distance rules, or user confirmation.
+ * Creates candidate pending orders only after the primary multi-timeframe
+ * decision has selected a direction. These candidates do not bypass live
+ * quote freshness, spread, broker stop-distance, risk-size, or user checks.
  */
 object PendingOrderPlanner {
     fun plan(
@@ -54,6 +54,8 @@ object PendingOrderPlanner {
         structuralStop: Double,
         structuralTarget: Double,
         preferBreakout: Boolean,
+        ema20Price: Double? = null,
+        breakoutLevel: Double? = null,
         minimumRewardRisk: Double = 1.5
     ): PendingOrderPlan? {
         if (!currentPrice.isFinite() || currentPrice <= 0.0 ||
@@ -65,17 +67,28 @@ object PendingOrderPlanner {
 
         val buy = direction == TradeDirection.BUY
         val offset = max(atrM5 * 0.20, currentPrice * 0.00005)
-        val entry = when {
-            buy && preferBreakout -> currentPrice + offset
-            buy -> currentPrice - offset
-            !buy && preferBreakout -> currentPrice - offset
-            else -> currentPrice + offset
-        }
-        val type = when {
-            buy && preferBreakout -> PendingOrderType.BUY_STOP
-            buy -> PendingOrderType.BUY_LIMIT
-            !buy && preferBreakout -> PendingOrderType.SELL_STOP
-            else -> PendingOrderType.SELL_LIMIT
+        val type: PendingOrderType
+        val entry: Double
+        val rationale: String
+
+        if (preferBreakout) {
+            type = if (buy) PendingOrderType.BUY_STOP else PendingOrderType.SELL_STOP
+            val level = breakoutLevel?.takeIf {
+                it.isFinite() && it > 0.0 && if (buy) it > currentPrice else it < currentPrice
+            }
+            entry = if (buy) max(currentPrice + offset, (level ?: currentPrice) + offset)
+                    else minOf(currentPrice - offset, (level ?: currentPrice) - offset)
+            rationale = "突破/延续条件单：触发价依据可用的近端结构位与当前价偏移；超过 3 根 M5 K 线未触发，或价格反向越过取消边界，取消订单。"
+        } else {
+            type = if (buy) PendingOrderType.BUY_LIMIT else PendingOrderType.SELL_LIMIT
+            val ema = ema20Price?.takeIf { it.isFinite() && it > 0.0 }
+                ?: return null
+            val isCorrectSide = if (buy) ema < currentPrice - offset * 0.25
+                                else ema > currentPrice + offset * 0.25
+            val distance = abs(currentPrice - ema)
+            if (!isCorrectSide || distance > atrM5 * 0.80) return null
+            entry = ema
+            rationale = "回踩限价单以 M5 EMA20 作为候选价；EMA20 已不在合适回踩区或距离超过 0.8 ATR 时不生成。超过 3 根 M5 K 线未触发，取消订单。"
         }
 
         val stop = if (buy) minOf(structuralStop, entry - atrM5 * 0.65)
@@ -84,8 +97,8 @@ object PendingOrderPlanner {
         if (!risk.isFinite() || risk <= 0.0 || risk > atrM5 * 3.0) return null
 
         val structuralReward = if (buy) structuralTarget - entry else entry - structuralTarget
-        if (structuralReward / risk < minimumRewardRisk) return null
-        val target1Distance = max(risk * minimumRewardRisk, minOf(structuralReward, risk * 1.5))
+        if (!structuralReward.isFinite() || structuralReward / risk < minimumRewardRisk) return null
+        val target1Distance = risk * minimumRewardRisk
         val target2Distance = minOf(structuralReward, risk * 2.5)
         if (target2Distance < target1Distance) return null
         val sign = if (buy) 1.0 else -1.0
@@ -105,11 +118,7 @@ object PendingOrderPlanner {
             riskReward2 = target2Distance / risk,
             expiresAfterM5Bars = 3,
             cancelIfPriceBeyond = cancelLevel,
-            rationale = if (preferBreakout) {
-                "条件单只在价格突破触发价时成交；若突破失败或超过 3 根 M5 K 线未触发，取消订单。"
-            } else {
-                "回踩限价单等待价格回到计划区；若行情越过取消边界或超过 3 根 M5 K 线未触发，取消订单。"
-            }
+            rationale = rationale
         )
         return plan.takeIf { it.isValid() }
     }
