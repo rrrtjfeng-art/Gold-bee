@@ -20,7 +20,7 @@ data class TradeDecisionGateResult(
 object TradeDecisionGate {
 
     private const val MAX_SPREAD_ATR_RATIO = 0.15
-    private val freshnessGuard = MarketFreshnessGuard(maxAgeMillis = 30_000L)
+    private val freshnessGuard = MarketFreshnessGuard(maxAgeMillis = 3_000L)
 
     fun evaluate(
         snapshot: MarketSnapshot,
