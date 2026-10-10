@@ -19,6 +19,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check Telegram service syntax and strategy tests
+        run: |
+          python -m py_compile telegram-bot/strategy.py telegram-bot/bot.py telegram-bot/test_strategy.py
+          cd telegram-bot
+          python -m unittest -v test_strategy.py
+
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
