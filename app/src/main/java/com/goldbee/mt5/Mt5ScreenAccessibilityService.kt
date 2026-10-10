@@ -42,6 +42,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         val observation = Mt5ScreenObservationParser.parse(texts)
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putLong(KEY_OBSERVED_AT, System.currentTimeMillis())
+            .putString(KEY_SOURCE, "ACCESSIBILITY")
             .putString(KEY_SYMBOL, observation.symbol.orEmpty())
             .putString(KEY_TIMEFRAME, observation.timeframe.orEmpty())
             .putString(KEY_DIRECTION, observation.direction.orEmpty())
@@ -85,6 +86,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         const val KEY_BID = "bid"
         const val KEY_ASK = "ask"
         const val KEY_TEXT_COUNT = "text_count"
+        const val KEY_SOURCE = "observation_source"
         private const val MIN_PROCESS_INTERVAL_MS = 700L
         private const val MAX_NODES = 250
     }
