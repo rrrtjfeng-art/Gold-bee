@@ -14,6 +14,8 @@ data class StrategyTrainingResult(
     val selectedConfig: MultiTimeframeDecisionConfig,
     val training: BacktestResult,
     val validation: BacktestResult,
+    /** Same untouched validation period, tested with twice the assumed round-trip cost. */
+    val validationDoubleCost: BacktestResult,
     val candidatesEvaluated: Int,
     val splitTimeSeconds: Long,
     val selectionNote: String
@@ -68,7 +70,12 @@ object StrategyTrainer {
                 decisionConfig = config
             )
             evaluated++
-            if (result.trades.size < 10 || !result.expectancyR.isFinite()) {
+            if (
+                result.trades.size < 10 ||
+                !result.expectancyR.isFinite() ||
+                result.expectancyR <= 0.0 ||
+                (result.profitFactor ?: 0.0) <= 1.0
+            ) {
                 null
             } else {
                 // Penalize large historical drawdown slightly to avoid choosing
@@ -93,16 +100,24 @@ object StrategyTrainer {
             decisionConfig = config,
             decisionStartTimeSeconds = splitTime
         )
+        val validationDoubleCost = StrategyBacktester.run(
+            sourceCandles = sourceCandles,
+            maxHoldBars = maxHoldBars,
+            roundTripCostPrice = roundTripCostPrice * 2.0,
+            decisionConfig = config,
+            decisionStartTimeSeconds = splitTime
+        )
         val note = if (chosen == null) {
-            "训练段没有任何候选参数达到至少 10 笔交易；保留默认参数，不声称已找到优势。"
+            "训练段没有候选参数同时满足至少 10 笔交易、净期望为正、Profit Factor 大于 1；保留默认参数，不声称已找到优势。"
         } else {
-            "参数只按训练段净期望与回撤惩罚选出；最终是否有优势必须看后续样本外结果。"
+            "参数只按训练段中净期望为正且 Profit Factor 大于 1 的候选，再结合回撤惩罚选出；最终仍以未参与选择的样本外结果为准。"
         }
 
         return StrategyTrainingResult(
             selectedConfig = config,
             training = trainingResult,
             validation = validationResult,
+            validationDoubleCost = validationDoubleCost,
             candidatesEvaluated = evaluated,
             splitTimeSeconds = splitTime,
             selectionNote = note
