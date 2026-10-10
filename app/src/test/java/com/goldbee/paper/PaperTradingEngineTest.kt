@@ -117,4 +117,18 @@ class PaperTradingEngineTest {
         assertFalse(invalidCommission.accepted)
     }
 
+    @Test
+    fun spreadAdjustedRiskRewardCanRejectSmallTarget() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4099.0, 4101.0, "REAL", now)
+        val result = PaperTradingEngine.open(
+            signal = signal,
+            quote = quote(4099.8, 4100.2),
+            nowMillis = now,
+            maxEntryDistance = 1.0,
+            minimumRiskReward = 1.0
+        )
+        assertFalse(result.accepted)
+        assertNull(result.trade)
+    }
+
 }
