@@ -18,12 +18,12 @@ class RiskManagerTest {
     )
 
     @Test
-    fun calculatesRiskSizingForValidInputs() {
+    fun calculatesRiskSizingOnlyWithExplicitContractValue() {
         val result = RiskManager.calculate(
             balance = 1000.0,
             riskPercent = 1.0,
             setup = validBuySetup,
-            pricePerLot = 100.0
+            accountCurrencyValuePerPriceUnitPerLot = 100.0
         )
         assertEquals(10.0, result!!.riskAmount, 0.000001)
         assertEquals(0.1, result.suggestedLotSize, 0.000001)
@@ -32,9 +32,59 @@ class RiskManagerTest {
 
     @Test
     fun rejectsNonFiniteAndOutOfRangeInputs() {
-        assertNull(RiskManager.calculate(Double.NaN, 1.0, validBuySetup))
-        assertNull(RiskManager.calculate(1000.0, Double.POSITIVE_INFINITY, validBuySetup))
-        assertNull(RiskManager.calculate(1000.0, 101.0, validBuySetup))
-        assertNull(RiskManager.calculate(1000.0, 1.0, validBuySetup, Double.NaN))
+        assertNull(
+            RiskManager.calculate(
+                Double.NaN, 1.0, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = 100.0
+            )
+        )
+        assertNull(
+            RiskManager.calculate(
+                1000.0, Double.POSITIVE_INFINITY, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = 100.0
+            )
+        )
+        assertNull(
+            RiskManager.calculate(
+                1000.0, 101.0, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = 100.0
+            )
+        )
+        assertNull(
+            RiskManager.calculate(
+                1000.0, 1.0, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = Double.NaN
+            )
+        )
+        assertNull(
+            RiskManager.calculate(
+                1000.0, 1.0, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = 0.0
+            )
+        )
+        assertNull(
+            RiskManager.calculate(
+                1000.0, 1.0, validBuySetup,
+                accountCurrencyValuePerPriceUnitPerLot = Double.POSITIVE_INFINITY
+            )
+        )
+    }
+
+    @Test
+    fun rejectsOverflowInLossPerLotCalculation() {
+        val largeStopSetup = validBuySetup.copy(
+            entry = 1.0e200,
+            stopLoss = 1.0,
+            takeProfit = 1.0e200 + 1.0e190,
+            riskReward = 1.0e-10
+        )
+        assertNull(
+            RiskManager.calculate(
+                balance = 1000.0,
+                riskPercent = 1.0,
+                setup = largeStopSetup,
+                accountCurrencyValuePerPriceUnitPerLot = 1.0e200
+            )
+        )
     }
 }
