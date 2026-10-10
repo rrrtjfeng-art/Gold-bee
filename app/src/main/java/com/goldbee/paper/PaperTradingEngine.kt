@@ -40,13 +40,17 @@ data class PaperTrade(
     val entryAsk: Double,
     val entryTimestampMillis: Long,
     val source: String,
+    val lotSize: Double = 0.01,
+    val contractSizeOunces: Double = 100.0,
+    val commissionPerLotRoundTurnUsd: Double = 0.0,
     val status: PaperTradeStatus = PaperTradeStatus.OPEN,
     val exitPrice: Double? = null,
     val exitBid: Double? = null,
     val exitAsk: Double? = null,
     val exitTimestampMillis: Long? = null,
     val exitReason: PaperExitReason? = null,
-    val pnlPrice: Double? = null
+    val pnlPrice: Double? = null,
+    val pnlUsd: Double? = null
 )
 
 data class PaperTradeAttempt(
@@ -64,7 +68,10 @@ object PaperTradingEngine {
         quote: PaperQuote,
         nowMillis: Long,
         maxEntryDistance: Double,
-        minimumRiskReward: Double = 1.0
+        minimumRiskReward: Double = 1.0,
+        lotSize: Double = 0.01,
+        contractSizeOunces: Double = 100.0,
+        commissionPerLotRoundTurnUsd: Double = 0.0
     ): PaperTradeAttempt {
         val quoteError = validateQuote(quote, nowMillis)
         if (quoteError != null) return PaperTradeAttempt(null, quoteError)
@@ -79,6 +86,12 @@ object PaperTradingEngine {
         }
         if (!minimumRiskReward.isFinite() || minimumRiskReward <= 0.0) {
             return PaperTradeAttempt(null, "模拟交易的最低风险回报设置无效。")
+        }
+        if (!lotSize.isFinite() || lotSize <= 0.0 ||
+            !contractSizeOunces.isFinite() || contractSizeOunces <= 0.0 ||
+            !commissionPerLotRoundTurnUsd.isFinite() || commissionPerLotRoundTurnUsd < 0.0
+        ) {
+            return PaperTradeAttempt(null, "模拟手数、每手合约规格或往返佣金无效。")
         }
 
         val entry = if (signal.direction == TradeDirection.BUY) quote.ask else quote.bid
@@ -112,7 +125,10 @@ object PaperTradingEngine {
                 entryBid = quote.bid,
                 entryAsk = quote.ask,
                 entryTimestampMillis = quote.timestampMillis,
-                source = signal.source
+                source = signal.source,
+                lotSize = lotSize,
+                contractSizeOunces = contractSizeOunces,
+                commissionPerLotRoundTurnUsd = commissionPerLotRoundTurnUsd
             ),
             "模拟单已开启；BUY 按 Ask 进场，SELL 按 Bid 进场。"
         )
@@ -162,7 +178,8 @@ object PaperTradingEngine {
                 exitAsk = quote.ask,
                 exitTimestampMillis = quote.timestampMillis,
                 exitReason = reason,
-                pnlPrice = pnl
+                pnlPrice = pnl,
+                pnlUsd = netPnlUsd(trade, pnl)
             ),
             "模拟单已平仓：$reason。"
         )
@@ -192,11 +209,16 @@ object PaperTradingEngine {
                 exitAsk = quote.ask,
                 exitTimestampMillis = quote.timestampMillis,
                 exitReason = PaperExitReason.MANUAL,
-                pnlPrice = pnl
+                pnlPrice = pnl,
+                pnlUsd = netPnlUsd(trade, pnl)
             ),
             "模拟单已按当前 MT5 平仓侧报价手动平仓。"
         )
     }
+
+    private fun netPnlUsd(trade: PaperTrade, pricePnl: Double): Double =
+        pricePnl * trade.contractSizeOunces * trade.lotSize -
+            trade.commissionPerLotRoundTurnUsd * trade.lotSize
 
     private fun validateQuote(quote: PaperQuote, nowMillis: Long): String? {
         val symbol = quote.symbol.uppercase().replace("/", "").trim()
