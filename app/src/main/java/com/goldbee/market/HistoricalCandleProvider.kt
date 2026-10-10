@@ -293,8 +293,23 @@ class HistoricalCandleProvider(
             it.timestamp
         }
 
+        // Providers can include the currently forming candle. Exclude it:
+        // live decisions and backtests must use completed bars only.
+        val nowSeconds = System.currentTimeMillis() / 1000L
+        val closedCandles = result.filter { candle ->
+            candle.timestamp <= nowSeconds &&
+                candle.timestamp + timeframe.seconds <= nowSeconds
+        }
+        if (closedCandles.isEmpty()) {
+            return Result.failure(
+                IllegalStateException(
+                    "Twelve Data returned no fully closed candles for ${timeframe.code}."
+                )
+            )
+        }
+
         return Result.success(
-            result
+            closedCandles
         )
     }
 
