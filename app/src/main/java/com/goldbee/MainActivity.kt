@@ -69,12 +69,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var liveFeedQuoteText: TextView
     private lateinit var liveFeedAnalysisText: TextView
     @Volatile private var lastLiveAnalysisQueuedAt: Long = 0L
+    @Volatile private var lastLiveTickReceivedAt: Long = 0L
     private var liveFeedClient: GoldPriceDevWebSocketClient? = null
     private val liveFeedController = MarketFeedController()
     private val mt5QuoteController = MarketFeedController()
     private val liveFeedListener = object : MarketTickListener {
         override fun onTick(tick: MarketTick) {
             val accepted = liveFeedController.submitTick(tick)
+            if (accepted) lastLiveTickReceivedAt = System.currentTimeMillis()
             handler.post {
                 if (!::liveFeedQuoteText.isInitialized) return@post
                 liveFeedQuoteText.text = if (accepted) {
@@ -84,15 +86,21 @@ class MainActivity : AppCompatActivity() {
                     "收到报价，但未通过行情新鲜度或品种检查；不可用于进场。"
                 }
                 liveFeedQuoteText.setTextColor(if (accepted) green else gold)
+                if (accepted && liveFeedClient?.isConnected() == true && ::liveFeedStatusText.isInitialized) {
+                    liveFeedStatusText.text = "状态：实时订阅正常 · 最新报价刚刚收到"
+                    liveFeedStatusText.setTextColor(green)
+                }
             }
             if (accepted) refreshLiveFeedAnalysis(tick)
         }
 
         override fun onConnected(source: String) {
+            lastLiveTickReceivedAt = 0L
             handler.post {
                 if (::liveFeedStatusText.isInitialized) {
-                    liveFeedStatusText.text = "状态：服务器已确认黄金行情订阅 · $source"
-                    liveFeedStatusText.setTextColor(green)
+                    liveFeedStatusText.text =
+                        "状态：服务器已确认订阅 · 等待第一笔有效报价 · $source"
+                    liveFeedStatusText.setTextColor(gold)
                 }
             }
         }
@@ -144,6 +152,38 @@ class MainActivity : AppCompatActivity() {
             handler.postDelayed(this, OBSERVER_REFRESH_INTERVAL_MS)
         }
     }
+
+    /**
+     * A live socket can remain open while its last market tick is stale.
+     * Keep transport status separate from quote freshness in the UI.
+     */
+    private val liveFeedHealthRunnable = object : Runnable {
+        override fun run() {
+            if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+
+            if (::liveFeedStatusText.isInitialized && liveFeedClient?.isConnected() == true) {
+                val lastTickAt = lastLiveTickReceivedAt
+                if (lastTickAt <= 0L) {
+                    liveFeedStatusText.text =
+                        "状态：订阅已确认，但尚未收到有效报价；不能把连接状态当成实时价格。"
+                    liveFeedStatusText.setTextColor(gold)
+                } else {
+                    val ageMillis = (System.currentTimeMillis() - lastTickAt).coerceAtLeast(0L)
+                    if (ageMillis > LIVE_TICK_MAX_AGE_MS) {
+                        liveFeedStatusText.text =
+                            "状态：连接仍存在，但报价已过期（${ageMillis / 1000} 秒）；旧报价不可用于当前分析。"
+                        liveFeedStatusText.setTextColor(red)
+                    } else {
+                        liveFeedStatusText.text =
+                            "状态：实时订阅正常 · 最近报价 ${ageMillis} 毫秒前收到"
+                        liveFeedStatusText.setTextColor(green)
+                    }
+                }
+            }
+
+            handler.postDelayed(this, LIVE_FEED_HEALTH_INTERVAL_MS)
+        }
+    }
     private var requestInProgress = false
     private val pollInterval = 10 * 60 * 1000L
 
@@ -187,10 +227,13 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         handler.removeCallbacks(observerRefreshRunnable)
         handler.post(observerRefreshRunnable)
+        handler.removeCallbacks(liveFeedHealthRunnable)
+        handler.post(liveFeedHealthRunnable)
     }
 
     override fun onPause() {
         handler.removeCallbacks(observerRefreshRunnable)
+        handler.removeCallbacks(liveFeedHealthRunnable)
         super.onPause()
     }
 
@@ -1376,6 +1419,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         polling = false
         handler.removeCallbacks(pollRunnable)
+        handler.removeCallbacks(liveFeedHealthRunnable)
         liveFeedClient?.disconnect()
         liveFeedClient = null
         ioExecutor.shutdownNow()
@@ -1385,5 +1429,7 @@ class MainActivity : AppCompatActivity() {
     companion object {
         private const val SCREEN_CAPTURE_REQUEST_CODE = 7401
         private const val OBSERVER_REFRESH_INTERVAL_MS = 1000L
+        private const val LIVE_FEED_HEALTH_INTERVAL_MS = 1000L
+        private const val LIVE_TICK_MAX_AGE_MS = 3000L
     }
 }
