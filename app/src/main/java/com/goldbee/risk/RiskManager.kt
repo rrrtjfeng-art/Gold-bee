@@ -1,6 +1,5 @@
 package com.goldbee.risk
 
-import com.goldbee.decision.TradeDirection
 import com.goldbee.decision.TradeSetup
 import kotlin.math.abs
 
@@ -21,56 +20,24 @@ object RiskManager {
         setup: TradeSetup,
         pricePerLot: Double = 100.0
     ): RiskParameters? {
+        if (!balance.isFinite() || balance <= 0.0) return null
+        if (!riskPercent.isFinite() || riskPercent <= 0.0 || riskPercent > 100.0) return null
+        if (!pricePerLot.isFinite() || pricePerLot <= 0.0) return null
+        if (!setup.isValid()) return null
 
-        if (balance <= 0.0) {
-            return null
-        }
+        val riskAmount = balance * riskPercent / 100.0
+        val stopLossDistance = abs(setup.entry - setup.stopLoss)
+        val takeProfitDistance = abs(setup.takeProfit - setup.entry)
 
-        if (riskPercent <= 0.0) {
-            return null
-        }
+        if (!riskAmount.isFinite() || riskAmount <= 0.0) return null
+        if (!stopLossDistance.isFinite() || stopLossDistance <= 0.0) return null
+        if (!takeProfitDistance.isFinite() || takeProfitDistance <= 0.0) return null
 
-        if (pricePerLot <= 0.0) {
-            return null
-        }
+        val riskReward = takeProfitDistance / stopLossDistance
+        val suggestedLotSize = riskAmount / (stopLossDistance * pricePerLot)
 
-        if (!setup.isValid()) {
-            return null
-        }
-
-        val riskAmount =
-            balance * riskPercent / 100.0
-
-        val stopLossDistance =
-            abs(
-                setup.entry -
-                        setup.stopLoss
-            )
-
-        val takeProfitDistance =
-            abs(
-                setup.takeProfit -
-                        setup.entry
-            )
-
-        if (stopLossDistance <= 0.0) {
-            return null
-        }
-
-        if (takeProfitDistance <= 0.0) {
-            return null
-        }
-
-        val riskReward =
-            takeProfitDistance /
-                    stopLossDistance
-
-        val suggestedLotSize =
-            riskAmount /
-                    (
-                        stopLossDistance *
-                                pricePerLot
-                        )
+        if (!riskReward.isFinite() || riskReward <= 0.0) return null
+        if (!suggestedLotSize.isFinite() || suggestedLotSize <= 0.0) return null
 
         return RiskParameters(
             riskAmount = riskAmount,
@@ -78,9 +45,7 @@ object RiskManager {
             stopLossDistance = stopLossDistance,
             takeProfitDistance = takeProfitDistance,
             riskReward = riskReward,
-            suggestedLotSize =
-                suggestedLotSize
-                    .coerceAtLeast(0.0)
+            suggestedLotSize = suggestedLotSize
         )
     }
 }
