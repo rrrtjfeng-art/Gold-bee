@@ -69,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastLiveAnalysisQueuedAt: Long = 0L
     private var liveFeedClient: GoldPriceDevWebSocketClient? = null
     private val liveFeedController = MarketFeedController()
+    private val mt5QuoteController = MarketFeedController()
     private val liveFeedListener = object : MarketTickListener {
         override fun onTick(tick: MarketTick) {
             val accepted = liveFeedController.submitTick(tick)
@@ -459,6 +460,15 @@ class MainActivity : AppCompatActivity() {
         }
         addButton(mt5Row, "刷新读取结果") { refreshMt5Observation() }
         mt5Card.addView(mt5Row)
+        val mt5QuoteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(mt5QuoteRow, "确认 MT5 报价并分析", true) { evaluateMt5ObservedQuote() }
+        mt5Card.addView(mt5QuoteRow)
+        addLabel(
+            mt5Card,
+            "只有你确认后才会使用屏幕读取的 Bid/Ask。识别过期、品种不明、历史数据过旧或报价与历史价格差距过大时，应用会拒绝生成进场方案。",
+            10f,
+            muted
+        )
         val ocrRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(ocrRow, "开始屏幕 OCR", true) {
             val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
@@ -887,6 +897,7 @@ class MainActivity : AppCompatActivity() {
 
                 val analysis = MultiTimeframeAnalyzer.analyze(candleMap)
                 liveFeedController.seedHistoricalCandles(candleMap)
+                mt5QuoteController.seedHistoricalCandles(candleMap)
                 latestCandles = candleMap.toMap()
                 latestAnalysis = analysis
                 val rendered = buildString {
@@ -1016,6 +1027,153 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Uses a fresh, user-confirmed quote parsed from the MT5 screen.
+     * The app never treats OCR alone as authorization: the user must tap the
+     * explicit confirmation button, and all quote/history/risk gates still run.
+     */
+    private fun evaluateMt5ObservedQuote() {
+        val observation = getSharedPreferences(
+            Mt5ScreenAccessibilityService.PREFS_NAME,
+            MODE_PRIVATE
+        )
+        val observedAt = observation.getLong(
+            Mt5ScreenAccessibilityService.KEY_OBSERVED_AT,
+            0L
+        )
+        val source = observation.getString(
+            Mt5ScreenAccessibilityService.KEY_SOURCE,
+            ""
+        ).orEmpty()
+        val symbol = observation.getString(
+            Mt5ScreenAccessibilityService.KEY_SYMBOL,
+            ""
+        ).orEmpty().uppercase().replace("/", "")
+        val bid = observation.getString(
+            Mt5ScreenAccessibilityService.KEY_BID,
+            ""
+        ).orEmpty().toDoubleOrNull()
+        val ask = observation.getString(
+            Mt5ScreenAccessibilityService.KEY_ASK,
+            ""
+        ).orEmpty().toDoubleOrNull()
+        val ageMillis = System.currentTimeMillis() - observedAt
+
+        fun reject(reason: String) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "MT5 报价验证失败：$reason"
+                )
+            )
+        }
+
+        if (source != "ACCESSIBILITY" && source != "SCREEN_OCR") {
+            reject("没有来自 MT5 的有效屏幕观察记录。先启用只读读取或屏幕 OCR。")
+            return
+        }
+        if (observedAt <= 0L || ageMillis !in 0L..3000L) {
+            reject("屏幕报价已过期（必须在 3 秒内重新读取）。")
+            return
+        }
+        if (symbol !in setOf("XAUUSD", "GOLD")) {
+            reject("未能确认屏幕品种为 XAUUSD。识别到：${symbol.ifBlank { "未知" }}")
+            return
+        }
+        if (bid == null || ask == null || !bid.isFinite() || !ask.isFinite() ||
+            bid <= 0.0 || ask <= bid
+        ) {
+            reject("Bid/Ask 不完整或不合理。请确认 MT5 报价区域可见，且识别结果正确。")
+            return
+        }
+
+        val history = latestCandles
+        val priorAnalysis = latestAnalysis
+        if (priorAnalysis == null ||
+            listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
+                history[it].orEmpty().size < 50
+            }
+        ) {
+            reject("缺少足够的 M5/M15/H1 历史 K 线。先点击“加载历史数据并分析”。")
+            return
+        }
+
+        val nowSeconds = System.currentTimeMillis() / 1000L
+        val staleTimeframe = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).firstOrNull { tf ->
+            val last = history[tf].orEmpty().lastOrNull() ?: return@firstOrNull true
+            val ageSeconds = nowSeconds - last.timestamp
+            ageSeconds < -tf.seconds || ageSeconds > tf.seconds * 2L + 60L
+        }
+        if (staleTimeframe != null) {
+            reject("${staleTimeframe.name} 历史 K 线过旧。请重新加载历史数据。")
+            return
+        }
+
+        val atr = priorAnalysis.m15.indicators.atr14
+        if (atr == null || !atr.isFinite() || atr <= 0.0) {
+            reject("M15 ATR 不可用，无法进行风险与价格差异检查。")
+            return
+        }
+
+        val midpoint = bid + (ask - bid) / 2.0
+        val latestM5Close = history[Timeframe.M5].orEmpty().last().close
+        if (kotlin.math.abs(midpoint - latestM5Close) > atr) {
+            reject(
+                "MT5 当前价与最近 M5 历史收盘价差距超过 1 个 M15 ATR。" +
+                    "可能是数据源差异、行情跳变或历史数据过旧；重新加载后再试。"
+            )
+            return
+        }
+
+        val mt5Tick = MarketTick(
+            symbol = "XAUUSD",
+            bid = bid,
+            ask = ask,
+            timestamp = observedAt,
+            source = "MT5 screen quote (user-confirmed)"
+        )
+        if (!mt5QuoteController.submitTick(mt5Tick)) {
+            reject("报价未通过时间新鲜度或重复行情检查。请等待 MT5 更新后再确认。")
+            return
+        }
+
+        val currentCandles = linkedMapOf(
+            Timeframe.M5 to mt5QuoteController.getCandles(Timeframe.M5),
+            Timeframe.M15 to mt5QuoteController.getCandles(Timeframe.M15),
+            Timeframe.H1 to mt5QuoteController.getCandles(Timeframe.H1)
+        )
+        val analysis = try {
+            MultiTimeframeAnalyzer.analyze(currentCandles)
+        } catch (error: Exception) {
+            reject("无法分析当前 K 线：${error.message ?: "未知错误"}")
+            return
+        }
+
+        val snapshot = MarketSnapshot(
+            symbol = "XAUUSD",
+            bid = bid,
+            ask = ask,
+            timestamp = observedAt,
+            candles = currentCandles,
+            source = "MT5 screen quote (user-confirmed)",
+            receivedAt = observedAt
+        )
+        val gated = TradeDecisionGate.evaluate(
+            snapshot = snapshot,
+            analysis = analysis,
+            candles = currentCandles,
+            riskState = RiskStateStore.get(this)
+        )
+        latestCandles = currentCandles
+        latestAnalysis = analysis
+        showDecision(gated.decision)
+        decisionReasonText.text = decisionReasonText.text.toString() +
+            "\n\n报价来源：MT5 屏幕读取，经你手动确认；报价年龄：${ageMillis} ms。" +
+            "\n历史 K 线来源仍为 Twelve Data。信号未经充分回测，不保证盈利；应用不会自动下单。"
     }
 
     private fun fmt(value: Double?): String =
