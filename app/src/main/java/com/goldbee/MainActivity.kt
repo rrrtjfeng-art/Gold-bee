@@ -1106,18 +1106,23 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val candles = latestCandles
+        val nowSeconds = now / 1000L
+        val candles = latestCandles.mapValues { (timeframe, items) ->
+            items.filter { candle -> candle.timestamp + timeframe.seconds <= nowSeconds }
+        }
         val minimumBars = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).all { tf ->
             candles[tf].orEmpty().size >= 50
         }
-        val analysis = latestAnalysis
+        val analysis = if (minimumBars) runCatching {
+            MultiTimeframeAnalyzer.analyze(candles)
+        }.getOrNull() else null
         if (!minimumBars || analysis == null) {
             showDecision(
                 DecisionResult(
                     action = DecisionAction.NO_TRADE,
                     setup = null,
                     confidence = 0.0,
-                    reason = "NO TRADE：先点击“加载历史数据并分析”，并确保 M5/M15/H1 每个周期至少有 50 根有效 K 线。"
+                    reason = "NO TRADE：闭合 K 线不足。请先加载历史数据，并确保排除未收盘 K 线后 M5/M15/H1 每周期仍至少有 50 根有效 K 线。"
                 )
             )
             return
