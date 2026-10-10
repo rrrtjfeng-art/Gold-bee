@@ -976,7 +976,7 @@ class MainActivity : AppCompatActivity() {
             analysisText.text = "请先输入并保存 Twelve Data API Key。"
             return
         }
-        analysisText.text = "正在获取 M5、M15、H1 历史 K 线…"
+        analysisText.text = "正在获取历史 K 线：M5 最多 2500 根，M15/H1 各 500 根…"
         decisionText.text = "WAIT"
         decisionText.setTextColor(gold)
         decisionReasonText.text = "数据下载期间不会生成新方案。"
@@ -987,7 +987,10 @@ class MainActivity : AppCompatActivity() {
                 val candleMap = linkedMapOf<Timeframe, List<Candle>>()
                 val timeframes = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1)
                 for (timeframe in timeframes) {
-                    val result = provider.getHistoricalCandles(timeframe, 500)
+                    // M5 needs enough depth to cover more than a few trading days.
+                    // M15/H1 retain 500 bars to limit request size and startup time.
+                    val requestedBars = if (timeframe == Timeframe.M5) 2500 else 500
+                    val result = provider.getHistoricalCandles(timeframe, requestedBars)
                     if (result.isFailure) throw result.exceptionOrNull()
                         ?: IllegalStateException("历史数据请求失败")
                     candleMap[timeframe] = result.getOrThrow()
@@ -1000,6 +1003,7 @@ class MainActivity : AppCompatActivity() {
                 latestAnalysis = analysis
                 val rendered = buildString {
                     appendLine("数据来源：Twelve Data · XAU/USD")
+                    appendLine("历史深度：M5 ${candleMap[Timeframe.M5].orEmpty().size} 根；M15 ${candleMap[Timeframe.M15].orEmpty().size} 根；H1 ${candleMap[Timeframe.H1].orEmpty().size} 根。实际返回数量可能受数据源套餐限制。")
                     for (tf in timeframes) {
                         val candles = candleMap[tf].orEmpty()
                         val item = when (tf) {
