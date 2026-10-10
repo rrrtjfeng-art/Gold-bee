@@ -194,6 +194,40 @@ class StrategyBacktesterTest {
         )
     }
 
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsCandleTimeframeThatDoesNotMatchItsSeries() {
+        StrategyBacktester.validateSourceCandles(
+            mapOf(Timeframe.M15 to listOf(candle(101.0, 99.0, 100.0, 100.5)))
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsDuplicateCandleTimestamps() {
+        val candle = candle(101.0, 99.0, 100.0, 100.5)
+        StrategyBacktester.validateSourceCandles(
+            mapOf(Timeframe.M5 to listOf(candle, candle.copy(close = 100.2, high = 101.0)))
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsMixedSymbolsAcrossTimeframes() {
+        val m5 = candle(101.0, 99.0, 100.0, 100.5)
+        val m15 = candle(101.0, 99.0, 100.0, 100.5, timeframe = Timeframe.M15)
+            .copy(symbol = "EURUSD")
+        StrategyBacktester.validateSourceCandles(
+            mapOf(Timeframe.M5 to listOf(m5), Timeframe.M15 to listOf(m15))
+        )
+    }
+
+    @Test
+    fun acceptsConsistentUniqueCandleSeries() {
+        val m5 = candle(101.0, 99.0, 100.0, 100.5)
+        val m15 = candle(101.0, 99.0, 100.0, 100.5, timeframe = Timeframe.M15)
+        StrategyBacktester.validateSourceCandles(
+            mapOf(Timeframe.M5 to listOf(m5), Timeframe.M15 to listOf(m15))
+        )
+    }
+
     @Test
     fun emptyOrInsufficientHistoryCannotClaimStrategyPerformance() {
         val result = StrategyBacktester.run(emptyMap<Timeframe, List<Candle>>())
