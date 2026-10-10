@@ -82,12 +82,30 @@ object StrategyBacktester {
         it.timestamp + timeframe.seconds <= decisionTimeSeconds
     }
 
+    internal fun validateSourceCandles(sourceCandles: Map<Timeframe, List<Candle>>) {
+        sourceCandles.forEach { (timeframe, candles) ->
+            require(candles.all { it.timeframe == timeframe }) {
+                "Candle timeframe does not match map key: $timeframe"
+            }
+            require(candles.map { it.timestamp }.distinct().size == candles.size) {
+                "Duplicate candle timestamps found for $timeframe"
+            }
+        }
+        val symbols = sourceCandles.values.flatten()
+            .map { it.symbol.trim().uppercase() }
+            .distinct()
+        require(symbols.size <= 1) {
+            "Backtest data must contain only one symbol; found: ${symbols.joinToString()}"
+        }
+    }
+
     fun run(
         sourceCandles: Map<Timeframe, List<Candle>>,
         maxHoldBars: Int = 48,
         roundTripCostPrice: Double = 0.0
     ): BacktestResult {
         require(maxHoldBars > 0) { "maxHoldBars must be greater than zero" }
+        validateSourceCandles(sourceCandles)
         require(roundTripCostPrice.isFinite() && roundTripCostPrice >= 0.0) {
             "Round-trip cost must be finite and non-negative"
         }
