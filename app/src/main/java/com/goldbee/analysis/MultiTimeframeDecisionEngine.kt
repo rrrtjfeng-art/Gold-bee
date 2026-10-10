@@ -6,11 +6,22 @@ import com.goldbee.decision.TradeDirection
 import com.goldbee.decision.TradeSetup
 import com.goldbee.market.Candle
 
+data class MultiTimeframeDecisionConfig(
+    val minimumScore: Int = 6,
+    val targetR: Double = 2.0
+) {
+    init {
+        require(minimumScore in 4..9) { "minimumScore must be between 4 and 9" }
+        require(targetR.isFinite() && targetR in 1.0..3.0) { "targetR must be between 1.0 and 3.0" }
+    }
+}
+
 object MultiTimeframeDecisionEngine {
 
     fun decide(
         candles: Map<com.goldbee.market.Timeframe, List<Candle>>,
-        analysis: MultiTimeframeAnalysis
+        analysis: MultiTimeframeAnalysis,
+        config: MultiTimeframeDecisionConfig = MultiTimeframeDecisionConfig()
     ): DecisionResult {
 
         if (
@@ -62,8 +73,8 @@ object MultiTimeframeDecisionEngine {
             )
 
         if (
-            buyScore < 6 &&
-            sellScore < 6
+            buyScore < config.minimumScore &&
+            sellScore < config.minimumScore
         ) {
             return DecisionResult(
                 action = DecisionAction.WAIT,
@@ -75,14 +86,15 @@ object MultiTimeframeDecisionEngine {
         }
 
         if (
-            buyScore >= 6 &&
+            buyScore >= config.minimumScore &&
             buyScore > sellScore
         ) {
 
             val setup =
                 createBuySetup(
                     price = price,
-                    analysis = analysis
+                    analysis = analysis,
+                    targetR = config.targetR
                 )
                     ?: return noTrade(
                         "BUY 的风险结构无效。"
@@ -100,14 +112,15 @@ object MultiTimeframeDecisionEngine {
         }
 
         if (
-            sellScore >= 6 &&
+            sellScore >= config.minimumScore &&
             sellScore > buyScore
         ) {
 
             val setup =
                 createSellSetup(
                     price = price,
-                    analysis = analysis
+                    analysis = analysis,
+                    targetR = config.targetR
                 )
                     ?: return noTrade(
                         "SELL 的风险结构无效。"
@@ -231,7 +244,8 @@ object MultiTimeframeDecisionEngine {
 
     private fun createBuySetup(
         price: Double,
-        analysis: MultiTimeframeAnalysis
+        analysis: MultiTimeframeAnalysis,
+        targetR: Double
     ): TradeSetup? {
 
         val atr =
@@ -258,7 +272,7 @@ object MultiTimeframeDecisionEngine {
         }
 
         val takeProfit =
-            price + risk * 2.0
+            price + risk * targetR
 
         val setup =
             TradeSetup(
@@ -266,7 +280,7 @@ object MultiTimeframeDecisionEngine {
                 entry = price,
                 stopLoss = stopLoss,
                 takeProfit = takeProfit,
-                riskReward = 2.0,
+                riskReward = targetR,
                 reason =
                     "H1、M15、M5 多周期偏多，BUY 条件达到最低要求。"
             )
@@ -280,7 +294,8 @@ object MultiTimeframeDecisionEngine {
 
     private fun createSellSetup(
         price: Double,
-        analysis: MultiTimeframeAnalysis
+        analysis: MultiTimeframeAnalysis,
+        targetR: Double
     ): TradeSetup? {
 
         val atr =
@@ -307,7 +322,7 @@ object MultiTimeframeDecisionEngine {
         }
 
         val takeProfit =
-            price - risk * 2.0
+            price - risk * targetR
 
         val setup =
             TradeSetup(
@@ -315,7 +330,7 @@ object MultiTimeframeDecisionEngine {
                 entry = price,
                 stopLoss = stopLoss,
                 takeProfit = takeProfit,
-                riskReward = 2.0,
+                riskReward = targetR,
                 reason =
                     "H1、M15、M5 多周期偏空，SELL 条件达到最低要求。"
             )
