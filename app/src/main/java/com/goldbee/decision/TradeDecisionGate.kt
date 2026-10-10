@@ -19,7 +19,8 @@ data class TradeDecisionGateResult(
 
 object TradeDecisionGate {
 
-    private val freshnessGuard = MarketFreshnessGuard()
+    private const val MAX_SPREAD_ATR_RATIO = 0.15
+    private val freshnessGuard = MarketFreshnessGuard(maxAgeMillis = 30_000L)
 
     fun evaluate(
         snapshot: MarketSnapshot,
@@ -31,6 +32,17 @@ object TradeDecisionGate {
 
         if (!freshnessGuard.isFresh(snapshot)) {
             return blocked("行情已经过期，禁止交易。")
+        }
+
+        val atr = analysis.m15.indicators.atr14
+            ?: return blocked("M15 ATR 不可用，无法评估点差和风险。")
+
+        if (!atr.isFinite() || atr <= 0.0) {
+            return blocked("M15 ATR 无效，禁止生成交易方案。")
+        }
+
+        if (snapshot.spread > atr * MAX_SPREAD_ATR_RATIO) {
+            return blocked("当前点差相对 M15 ATR 过大，禁止进场；等待点差收窄后重新刷新报价。")
         }
 
         val decision = MultiTimeframeDecisionEngine.decide(
@@ -51,9 +63,6 @@ object TradeDecisionGate {
 
         val setup = decision.setup
             ?: return blocked("交易方案不存在。")
-
-        val atr = analysis.m15.indicators.atr14
-            ?: return blocked("M15 ATR 不可用。")
 
         val preflight = TradePreflight.check(
             TradePreflightRequest(
