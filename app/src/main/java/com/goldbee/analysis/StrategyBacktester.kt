@@ -70,6 +70,18 @@ data class BacktestResult(
  */
 object StrategyBacktester {
 
+    /**
+     * Keeps only higher-timeframe candles that were fully closed by the
+     * decision timestamp. Candle timestamps represent candle open times.
+     */
+    internal fun completedCandlesAtOrBefore(
+        candles: List<Candle>,
+        timeframe: Timeframe,
+        decisionTimeSeconds: Long
+    ): List<Candle> = candles.filter {
+        it.timestamp + timeframe.seconds <= decisionTimeSeconds
+    }
+
     fun run(
         sourceCandles: Map<Timeframe, List<Candle>>,
         maxHoldBars: Int = 48,
@@ -94,12 +106,16 @@ object StrategyBacktester {
             val signalCandle = m5[signalIndex]
             val decisionTime = signalCandle.timestamp + Timeframe.M5.seconds
 
-            val visibleM15 = m15.filter {
-                it.timestamp + Timeframe.M15.seconds <= decisionTime
-            }
-            val visibleH1 = h1.filter {
-                it.timestamp + Timeframe.H1.seconds <= decisionTime
-            }
+            val visibleM15 = completedCandlesAtOrBefore(
+                candles = m15,
+                timeframe = Timeframe.M15,
+                decisionTimeSeconds = decisionTime
+            )
+            val visibleH1 = completedCandlesAtOrBefore(
+                candles = h1,
+                timeframe = Timeframe.H1,
+                decisionTimeSeconds = decisionTime
+            )
             val visibleM5 = m5.take(signalIndex + 1)
 
             if (visibleM5.size < 50 || visibleM15.size < 50 || visibleH1.size < 50) {
