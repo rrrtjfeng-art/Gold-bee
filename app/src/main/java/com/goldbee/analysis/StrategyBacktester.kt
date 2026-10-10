@@ -105,7 +105,8 @@ object StrategyBacktester {
         roundTripCostPrice: Double = 0.0,
         decisionConfig: MultiTimeframeDecisionConfig = MultiTimeframeDecisionConfig(),
         decisionStartTimeSeconds: Long? = null,
-        decisionEndTimeSeconds: Long? = null
+        decisionEndTimeSeconds: Long? = null,
+        decisionTimeFilter: ((Long) -> Boolean)? = null
     ): BacktestResult {
         require(maxHoldBars > 0) { "maxHoldBars must be greater than zero" }
         validateSourceCandles(sourceCandles)
@@ -132,6 +133,10 @@ object StrategyBacktester {
             }
             if (decisionEndTimeSeconds != null && decisionTime > decisionEndTimeSeconds) {
                 break
+            }
+            if (decisionTimeFilter != null && !decisionTimeFilter(decisionTime)) {
+                signalIndex++
+                continue
             }
 
             val visibleM15 = completedCandlesAtOrBefore(
