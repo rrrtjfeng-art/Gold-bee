@@ -6,7 +6,7 @@ import kotlin.math.abs
 /**
  * Alternative XAUUSD take-profit levels expressed in risk multiples.
  *
- * Pip size is broker-convention dependent. The default 0.01 is only a display
+ * Pip size is broker-convention dependent. The default 0.1 is only a display
  * convention for estimating pips; it must not be treated as a universal broker rule.
  */
 enum class TakeProfitStyle(
@@ -27,7 +27,7 @@ data class TakeProfitTarget(
 )
 
 object TakeProfitPlanner {
-    const val DEFAULT_XAUUSD_PIP_SIZE: Double = 0.01
+    const val DEFAULT_XAUUSD_PIP_SIZE: Double = 0.1
 
     fun targets(
         direction: TradeDirection,
