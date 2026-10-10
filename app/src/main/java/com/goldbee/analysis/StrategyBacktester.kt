@@ -149,11 +149,14 @@ object StrategyBacktester {
                 TradeDirection.BUY -> exitPrice - entry
                 TradeDirection.SELL -> entry - exitPrice
             }
-            val rMultiple = when (exitType) {
-                BacktestExitType.STOP_LOSS -> -1.0
-                BacktestExitType.TAKE_PROFIT -> reward / risk
-                BacktestExitType.TIME_EXIT -> signedMove / risk
-            }
+            val rMultiple = calculateRMultiple(
+                direction = setup.direction,
+                entryPrice = entry,
+                exitPrice = exitPrice,
+                risk = risk,
+                exitType = exitType,
+                plannedReward = reward
+            )
 
             trades += BacktestTrade(
                 direction = setup.direction,
@@ -214,6 +217,27 @@ object StrategyBacktester {
                 if (stopGap) candle.open else stopLoss
             targetHit -> BacktestExitType.TAKE_PROFIT to takeProfit
             else -> null
+        }
+    }
+
+    internal fun calculateRMultiple(
+        direction: TradeDirection,
+        entryPrice: Double,
+        exitPrice: Double,
+        risk: Double,
+        exitType: BacktestExitType,
+        plannedReward: Double
+    ): Double {
+        require(risk.isFinite() && risk > 0.0) { "Risk must be finite and positive" }
+        val signedMove = when (direction) {
+            TradeDirection.BUY -> exitPrice - entryPrice
+            TradeDirection.SELL -> entryPrice - exitPrice
+        }
+        return when (exitType) {
+            // Use the actual modeled fill, so a gap through a stop can lose more than 1R.
+            BacktestExitType.STOP_LOSS,
+            BacktestExitType.TIME_EXIT -> signedMove / risk
+            BacktestExitType.TAKE_PROFIT -> plannedReward / risk
         }
     }
 
