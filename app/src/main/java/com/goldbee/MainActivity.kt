@@ -1147,12 +1147,35 @@ class MainActivity : AppCompatActivity() {
             paperTradeText.setTextColor(red)
             return
         }
+        val startingBalance = paperBalanceInput.text.toString().trim().toDoubleOrNull()
+        val lotSize = paperLotSizeInput.text.toString().trim().toDoubleOrNull()
+        val contractSize = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        val commission = paperCommissionInput.text.toString().trim().toDoubleOrNull()
+        if (startingBalance == null || !startingBalance.isFinite() || startingBalance <= 0.0 ||
+            lotSize == null || !lotSize.isFinite() || lotSize <= 0.0 ||
+            contractSize == null || !contractSize.isFinite() || contractSize <= 0.0 ||
+            commission == null || !commission.isFinite() || commission < 0.0
+        ) {
+            paperTradeText.text = "模拟账户参数无效。请检查初始余额、手数、每手盎司和往返佣金。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        prefs.edit()
+            .putString("paper_start_balance", startingBalance.toString())
+            .putString("paper_lot_size", lotSize.toString())
+            .putString("paper_contract_ounces", contractSize.toString())
+            .putString("paper_commission_round_turn", commission.toString())
+            .putString("paper_account_currency", paperAccountCurrency)
+            .apply()
         val attempt = PaperTradingEngine.open(
             signal = signal,
             quote = quote,
             nowMillis = now,
             maxEntryDistance = atr * 0.35,
-            minimumRiskReward = 1.0
+            minimumRiskReward = 1.0,
+            lotSize = lotSize,
+            contractSizeOunces = contractSize,
+            commissionPerLotRoundTurnUsd = commission
         )
         val trade = attempt.trade
         if (trade == null) {
@@ -1265,6 +1288,7 @@ class MainActivity : AppCompatActivity() {
         putNullable("exitTimestampMillis", trade.exitTimestampMillis)
         putNullable("exitReason", trade.exitReason?.name)
         putNullable("pnlPrice", trade.pnlPrice)
+        putNullable("pnlUsd", trade.pnlUsd)
         prefs.edit().putString("paper_trade_json", json.toString()).apply()
     }
 
@@ -1286,13 +1310,17 @@ class MainActivity : AppCompatActivity() {
                 entryAsk = json.getDouble("entryAsk"),
                 entryTimestampMillis = json.getLong("entryTimestampMillis"),
                 source = json.optString("source", "UNKNOWN"),
+                lotSize = json.optDouble("lotSize", 0.01),
+                contractSizeOunces = json.optDouble("contractSizeOunces", 100.0),
+                commissionPerLotRoundTurnUsd = json.optDouble("commissionPerLotRoundTurnUsd", 0.0),
                 status = PaperTradeStatus.valueOf(json.getString("status")),
                 exitPrice = nullableDouble("exitPrice"),
                 exitBid = nullableDouble("exitBid"),
                 exitAsk = nullableDouble("exitAsk"),
                 exitTimestampMillis = nullableLong("exitTimestampMillis"),
                 exitReason = if (json.isNull("exitReason")) null else PaperExitReason.valueOf(json.getString("exitReason")),
-                pnlPrice = nullableDouble("pnlPrice")
+                pnlPrice = nullableDouble("pnlPrice"),
+                pnlUsd = nullableDouble("pnlUsd")
             )
         } catch (_: Exception) {
             null
