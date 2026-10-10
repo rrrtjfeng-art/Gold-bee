@@ -160,7 +160,13 @@ class GoldPriceDevWebSocketClient(
         scheduleReconnect(closeCode = closeCode, httpStatusCode = httpStatusCode)
     }
 
+    @Synchronized
     private fun handleMessage(webSocket: WebSocket, raw: String) {
+        // A reconnect can replace the socket before an old socket's queued
+        // message callback arrives. Never let an obsolete connection confirm
+        // subscription state or deliver ticks for the current connection.
+        if (socket !== webSocket || userRequestedDisconnect) return
+
         val frame = try {
             JSONObject(raw)
         } catch (_: Exception) {
