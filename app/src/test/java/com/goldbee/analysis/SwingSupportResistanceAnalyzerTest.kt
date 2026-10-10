@@ -52,7 +52,8 @@ class SwingSupportResistanceAnalyzerTest {
             candles = candles,
             leftBars = 1,
             rightBars = 1,
-            currentPrice = 14.0
+            currentPrice = 14.0,
+            atr = 1.0
         )
 
         assertNotNull(result.nearestSupport)
