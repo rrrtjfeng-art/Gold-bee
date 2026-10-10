@@ -143,6 +143,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var paperTradeText: TextView
+    private lateinit var paperBalanceInput: EditText
+    private lateinit var paperLotSizeInput: EditText
+    private lateinit var paperContractSizeInput: EditText
+    private lateinit var paperCommissionInput: EditText
+    private var paperAccountCurrency: String = "USD"
     private var pendingPaperSignal: PaperSignal? = null
     private lateinit var copySignalInput: EditText
     private lateinit var copyResultText: TextView
@@ -352,6 +357,34 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { action() }
         }
         parent.addView(button, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
+    }
+
+    private fun makeNumericInput(value: String, hintText: String): EditText =
+        EditText(this).apply {
+            setText(value)
+            hint = hintText
+            setHintTextColor(muted)
+            setTextColor(white)
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(31, 37, 49))
+        }
+
+    private fun setPaperCurrency(currency: String) {
+        val nextCurrency = if (currency == "USC") "USC" else "USD"
+        val previousCurrency = paperAccountCurrency
+        if (nextCurrency != previousCurrency && ::paperBalanceInput.isInitialized) {
+            val currentBalance = paperBalanceInput.text.toString().trim().toDoubleOrNull()
+            if (currentBalance != null && currentBalance.isFinite() && currentBalance > 0.0) {
+                val converted = if (nextCurrency == "USC") currentBalance * 100.0 else currentBalance / 100.0
+                paperBalanceInput.setText(String.format(Locale.US, "%.2f", converted))
+                prefs.edit().putString("paper_start_balance", converted.toString()).apply()
+            }
+        }
+        paperAccountCurrency = nextCurrency
+        prefs.edit().putString("paper_account_currency", paperAccountCurrency).apply()
+        if (::paperTradeText.isInitialized) refreshPaperTradeStatus()
     }
 
     private fun buildScreen() {
@@ -611,6 +644,38 @@ class MainActivity : AppCompatActivity() {
             11f,
             gold
         )
+        addLabel(decision, "模拟账户参数", 14f, white, true)
+        addLabel(
+            decision,
+            "合约规格因经纪商而异。100 盎司/手只是常见默认假设，请先核对 MT5 品种规格；佣金 0 表示暂未计佣金。点差按 MT5 屏幕 Bid/Ask 模拟。",
+            11f,
+            gold
+        )
+        paperBalanceInput = makeNumericInput(
+            prefs.getString("paper_start_balance", "1000.00").orEmpty(),
+            "初始余额（账户单位）"
+        )
+        decision.addView(paperBalanceInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperLotSizeInput = makeNumericInput(
+            prefs.getString("paper_lot_size", "0.01").orEmpty(),
+            "模拟手数，例如 0.01"
+        )
+        decision.addView(paperLotSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperContractSizeInput = makeNumericInput(
+            prefs.getString("paper_contract_ounces", "100").orEmpty(),
+            "每手合约大小（盎司）"
+        )
+        decision.addView(paperContractSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperCommissionInput = makeNumericInput(
+            prefs.getString("paper_commission_round_turn", "0.00").orEmpty(),
+            "每手往返佣金（USD）"
+        )
+        decision.addView(paperCommissionInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperAccountCurrency = prefs.getString("paper_account_currency", "USD").orEmpty().ifBlank { "USD" }
+        val currencyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(currencyRow, "账户单位：USD", paperAccountCurrency == "USD") { setPaperCurrency("USD") }
+        addButton(currencyRow, "账户单位：USC 美分", paperAccountCurrency == "USC") { setPaperCurrency("USC") }
+        decision.addView(currencyRow)
         paperTradeText = addLabel(
             decision,
             "模拟账户：尚无交易。确认按钮只会创建本地模拟记录，不会点击 MT5 或发送真实订单。",
@@ -1092,12 +1157,35 @@ class MainActivity : AppCompatActivity() {
             paperTradeText.setTextColor(red)
             return
         }
+        val startingBalance = paperBalanceInput.text.toString().trim().toDoubleOrNull()
+        val lotSize = paperLotSizeInput.text.toString().trim().toDoubleOrNull()
+        val contractSize = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        val commission = paperCommissionInput.text.toString().trim().toDoubleOrNull()
+        if (startingBalance == null || !startingBalance.isFinite() || startingBalance <= 0.0 ||
+            lotSize == null || !lotSize.isFinite() || lotSize <= 0.0 ||
+            contractSize == null || !contractSize.isFinite() || contractSize <= 0.0 ||
+            commission == null || !commission.isFinite() || commission < 0.0
+        ) {
+            paperTradeText.text = "模拟账户参数无效。请检查初始余额、手数、每手盎司和往返佣金。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        prefs.edit()
+            .putString("paper_start_balance", startingBalance.toString())
+            .putString("paper_lot_size", lotSize.toString())
+            .putString("paper_contract_ounces", contractSize.toString())
+            .putString("paper_commission_round_turn", commission.toString())
+            .putString("paper_account_currency", paperAccountCurrency)
+            .apply()
         val attempt = PaperTradingEngine.open(
             signal = signal,
             quote = quote,
             nowMillis = now,
             maxEntryDistance = atr * 0.35,
-            minimumRiskReward = 1.0
+            minimumRiskReward = 1.0,
+            lotSize = lotSize,
+            contractSizeOunces = contractSize,
+            commissionPerLotRoundTurnUsd = commission
         )
         val trade = attempt.trade
         if (trade == null) {
@@ -1136,8 +1224,8 @@ class MainActivity : AppCompatActivity() {
         savePaperTrade(updated)
         if (updated.status == PaperTradeStatus.CLOSED) {
             recordPaperClosure(updated)
-            paperTradeText.text = "${attempt.reason}\n方向：${updated.direction} · 入场：${fmt(updated.entryPrice)} · 出场：${fmt(updated.exitPrice)}\n价格盈亏：${fmt(updated.pnlPrice)}（未换算账户货币；尚未应用经纪商合约规格/手数/佣金/隔夜费）"
-            paperTradeText.setTextColor(if ((updated.pnlPrice ?: 0.0) >= 0.0) green else red)
+            paperTradeText.text = "${attempt.reason}\n方向：${updated.direction} · 入场：${fmt(updated.entryPrice)} · 出场：${fmt(updated.exitPrice)}\n价格变动：${fmt(updated.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(updated.pnlUsd)}"
+            paperTradeText.setTextColor(if ((updated.pnlUsd ?: 0.0) >= 0.0) green else red)
         } else {
             val closeSide = if (updated.direction == TradeDirection.BUY) quote.bid else quote.ask
             val floating = if (updated.direction == TradeDirection.BUY) closeSide - updated.entryPrice else updated.entryPrice - closeSide
@@ -1170,22 +1258,22 @@ class MainActivity : AppCompatActivity() {
         }
         savePaperTrade(closed)
         recordPaperClosure(closed)
-        paperTradeText.text = "${attempt.reason}\n出场价：${fmt(closed.exitPrice)} · 价格盈亏：${fmt(closed.pnlPrice)}（未换算账户货币）"
-        paperTradeText.setTextColor(if ((closed.pnlPrice ?: 0.0) >= 0.0) green else red)
+        paperTradeText.text = "${attempt.reason}\n出场价：${fmt(closed.exitPrice)} · 价格变动：${fmt(closed.pnlPrice)} · 净盈亏：${fmtAccountMoney(closed.pnlUsd)}"
+        paperTradeText.setTextColor(if ((closed.pnlUsd ?: 0.0) >= 0.0) green else red)
         refreshPaperTradeStatus()
     }
 
     private fun recordPaperClosure(trade: PaperTrade) {
-        val pnl = trade.pnlPrice ?: return
-        val wins = prefs.getInt("paper_wins", 0) + if (pnl > 0.0) 1 else 0
-        val losses = prefs.getInt("paper_losses", 0) + if (pnl < 0.0) 1 else 0
-        val flats = prefs.getInt("paper_flats", 0) + if (pnl == 0.0) 1 else 0
-        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble() + pnl
+        val pnl = trade.pnlUsd ?: return
+        val wins = prefs.getInt("paper_money_wins", 0) + if (pnl > 0.0) 1 else 0
+        val losses = prefs.getInt("paper_money_losses", 0) + if (pnl < 0.0) 1 else 0
+        val flats = prefs.getInt("paper_money_flats", 0) + if (pnl == 0.0) 1 else 0
+        val total = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble() + pnl
         prefs.edit()
-            .putInt("paper_wins", wins)
-            .putInt("paper_losses", losses)
-            .putInt("paper_flats", flats)
-            .putFloat("paper_total_pnl_price", total.toFloat())
+            .putInt("paper_money_wins", wins)
+            .putInt("paper_money_losses", losses)
+            .putInt("paper_money_flats", flats)
+            .putFloat("paper_total_pnl_usd", total.toFloat())
             .apply()
     }
 
@@ -1200,6 +1288,9 @@ class MainActivity : AppCompatActivity() {
             .put("entryAsk", trade.entryAsk)
             .put("entryTimestampMillis", trade.entryTimestampMillis)
             .put("source", trade.source)
+            .put("lotSize", trade.lotSize)
+            .put("contractSizeOunces", trade.contractSizeOunces)
+            .put("commissionPerLotRoundTurnUsd", trade.commissionPerLotRoundTurnUsd)
             .put("status", trade.status.name)
         fun putNullable(key: String, value: Any?) {
             json.put(key, value ?: JSONObject.NULL)
@@ -1210,6 +1301,7 @@ class MainActivity : AppCompatActivity() {
         putNullable("exitTimestampMillis", trade.exitTimestampMillis)
         putNullable("exitReason", trade.exitReason?.name)
         putNullable("pnlPrice", trade.pnlPrice)
+        putNullable("pnlUsd", trade.pnlUsd)
         prefs.edit().putString("paper_trade_json", json.toString()).apply()
     }
 
@@ -1231,27 +1323,42 @@ class MainActivity : AppCompatActivity() {
                 entryAsk = json.getDouble("entryAsk"),
                 entryTimestampMillis = json.getLong("entryTimestampMillis"),
                 source = json.optString("source", "UNKNOWN"),
+                lotSize = json.optDouble("lotSize", 0.01),
+                contractSizeOunces = json.optDouble("contractSizeOunces", 100.0),
+                commissionPerLotRoundTurnUsd = json.optDouble("commissionPerLotRoundTurnUsd", 0.0),
                 status = PaperTradeStatus.valueOf(json.getString("status")),
                 exitPrice = nullableDouble("exitPrice"),
                 exitBid = nullableDouble("exitBid"),
                 exitAsk = nullableDouble("exitAsk"),
                 exitTimestampMillis = nullableLong("exitTimestampMillis"),
                 exitReason = if (json.isNull("exitReason")) null else PaperExitReason.valueOf(json.getString("exitReason")),
-                pnlPrice = nullableDouble("pnlPrice")
+                pnlPrice = nullableDouble("pnlPrice"),
+                pnlUsd = nullableDouble("pnlUsd")
             )
         } catch (_: Exception) {
             null
         }
     }
 
+    private fun accountScale(): Double = if (paperAccountCurrency == "USC") 100.0 else 1.0
+
+    private fun accountUnitLabel(): String = if (paperAccountCurrency == "USC") "USC" else "USD"
+
+    private fun fmtAccountMoney(valueInUsd: Double?): String {
+        if (valueInUsd == null || !valueInUsd.isFinite()) return "—"
+        return String.format(Locale.US, "%.2f %s", valueInUsd * accountScale(), accountUnitLabel())
+    }
+
     private fun refreshPaperTradeStatus() {
         if (!::paperTradeText.isInitialized) return
         val trade = loadPaperTrade()
-        val wins = prefs.getInt("paper_wins", 0)
-        val losses = prefs.getInt("paper_losses", 0)
-        val flats = prefs.getInt("paper_flats", 0)
-        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble()
-        val stats = "历史模拟结果：盈利 $wins · 亏损 $losses · 持平 $flats · 累计价格盈亏 ${fmt(total)}（非账户货币）"
+        val wins = prefs.getInt("paper_money_wins", 0)
+        val losses = prefs.getInt("paper_money_losses", 0)
+        val flats = prefs.getInt("paper_money_flats", 0)
+        val totalUsd = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble()
+        val startBalance = if (::paperBalanceInput.isInitialized) paperBalanceInput.text.toString().trim().toDoubleOrNull() ?: (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0) else (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0)
+        val realizedBalance = startBalance + totalUsd * accountScale()
+        val stats = "模拟账户：初始 ${String.format(Locale.US, "%.2f", startBalance)} ${accountUnitLabel()} · 已实现净盈亏 ${fmtAccountMoney(totalUsd)} · 余额 ${String.format(Locale.US, "%.2f", realizedBalance)} ${accountUnitLabel()}\\n净盈利 $wins · 净亏损 $losses · 持平 $flats"
         val monitorStatus = prefs.getString("paper_monitor_status", "尚未开始自动检查").orEmpty()
         val observedPrefs = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
         val quoteAge = System.currentTimeMillis() - observedPrefs.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
@@ -1259,20 +1366,40 @@ class MainActivity : AppCompatActivity() {
         val monitorFresh = quoteSource in setOf("ACCESSIBILITY", "SCREEN_OCR") &&
             quoteAge in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
         val monitorLine = if (monitorFresh) {
-            "自动 SL/TP 监控：报价更新正常。$monitorStatus"
+            "自动 SL/TP 监控：屏幕报价观察正常。$monitorStatus"
         } else {
             "自动 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 并启用只读读取或屏幕 OCR。"
         }
         if (trade?.status == PaperTradeStatus.OPEN) {
-            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n开仓点差：${fmt(trade.entryAsk - trade.entryBid)} · 来源：${trade.source}\n$monitorLine\n$stats"
+            val closeSide = latestPaperCloseSide()
+            val floatingUsd = if (closeSide == null) null else {
+                val move = if (trade.direction == TradeDirection.BUY) closeSide - trade.entryPrice else trade.entryPrice - closeSide
+                move * trade.contractSizeOunces * trade.lotSize -
+                    trade.commissionPerLotRoundTurnUsd * trade.lotSize
+            }
+            val equity = if (floatingUsd == null) realizedBalance else realizedBalance + floatingUsd * accountScale()
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\\n$monitorLine\\n$stats"
             paperTradeText.setTextColor(if (monitorFresh) gold else red)
         } else if (trade?.status == PaperTradeStatus.CLOSED) {
-            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason} · 价格盈亏 ${fmt(trade.pnlPrice)}\n$stats"
-            paperTradeText.setTextColor(if ((trade.pnlPrice ?: 0.0) >= 0.0) green else red)
+            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason}\\n价格变动：${fmt(trade.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(trade.pnlUsd)}\\n$stats"
+            paperTradeText.setTextColor(if ((trade.pnlUsd ?: 0.0) >= 0.0) green else red)
         } else {
-            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\n$stats"
+            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\\n$stats"
             paperTradeText.setTextColor(white)
         }
+    }
+
+    private fun latestPaperCloseSide(): Double? {
+        val observation = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        if (source !in setOf("ACCESSIBILITY", "SCREEN_OCR") ||
+            System.currentTimeMillis() - observedAt !in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
+        ) return null
+        val symbol = observation.getString(Mt5ScreenAccessibilityService.KEY_SYMBOL, "").orEmpty()
+        if (symbol.uppercase().replace("/", "").trim() !in setOf("XAUUSD", "GOLD")) return null
+        val key = if (loadPaperTrade()?.direction == TradeDirection.BUY) Mt5ScreenAccessibilityService.KEY_BID else Mt5ScreenAccessibilityService.KEY_ASK
+        return observation.getString(key, "").orEmpty().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
     }
 
     private fun refreshRiskStatus() {

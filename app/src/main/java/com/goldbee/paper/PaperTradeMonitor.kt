@@ -62,7 +62,7 @@ object PaperTradeMonitor {
             recordClosure(settings, updated)
             setStatus(
                 settings,
-                "模拟单已自动平仓：${updated.exitReason} · 出场 ${updated.exitPrice} · 价格盈亏 ${updated.pnlPrice}。仅为模拟，不是账户货币金额。"
+                "模拟单已自动平仓：${updated.exitReason} · 出场 ${updated.exitPrice} · 净盈亏 ${updated.pnlUsd} USD（价格变动 ${updated.pnlPrice}）。仅为模拟，不是账户货币金额。"
             )
         } else {
             setStatus(settings, "自动检查正常 · 最新 MT5 报价已核对 · 持仓仍未触及 SL/TP。")
@@ -83,16 +83,16 @@ object PaperTradeMonitor {
         settings: android.content.SharedPreferences,
         trade: PaperTrade
     ) {
-        val pnl = trade.pnlPrice ?: return
-        val wins = settings.getInt("paper_wins", 0) + if (pnl > 0.0) 1 else 0
-        val losses = settings.getInt("paper_losses", 0) + if (pnl < 0.0) 1 else 0
-        val flats = settings.getInt("paper_flats", 0) + if (pnl == 0.0) 1 else 0
-        val total = settings.getFloat("paper_total_pnl_price", 0f).toDouble() + pnl
+        val pnl = trade.pnlUsd ?: return
+        val wins = settings.getInt("paper_money_wins", 0) + if (pnl > 0.0) 1 else 0
+        val losses = settings.getInt("paper_money_losses", 0) + if (pnl < 0.0) 1 else 0
+        val flats = settings.getInt("paper_money_flats", 0) + if (pnl == 0.0) 1 else 0
+        val total = settings.getFloat("paper_total_pnl_usd", 0f).toDouble() + pnl
         settings.edit()
-            .putInt("paper_wins", wins)
-            .putInt("paper_losses", losses)
-            .putInt("paper_flats", flats)
-            .putFloat("paper_total_pnl_price", total.toFloat())
+            .putInt("paper_money_wins", wins)
+            .putInt("paper_money_losses", losses)
+            .putInt("paper_money_flats", flats)
+            .putFloat("paper_total_pnl_usd", total.toFloat())
             .apply()
     }
 
@@ -110,6 +110,9 @@ object PaperTradeMonitor {
             .put("entryAsk", trade.entryAsk)
             .put("entryTimestampMillis", trade.entryTimestampMillis)
             .put("source", trade.source)
+            .put("lotSize", trade.lotSize)
+            .put("contractSizeOunces", trade.contractSizeOunces)
+            .put("commissionPerLotRoundTurnUsd", trade.commissionPerLotRoundTurnUsd)
             .put("status", trade.status.name)
         fun nullable(key: String, value: Any?) {
             json.put(key, value ?: JSONObject.NULL)
@@ -120,6 +123,7 @@ object PaperTradeMonitor {
         nullable("exitTimestampMillis", trade.exitTimestampMillis)
         nullable("exitReason", trade.exitReason?.name)
         nullable("pnlPrice", trade.pnlPrice)
+        nullable("pnlUsd", trade.pnlUsd)
         settings.edit().putString(TRADE_KEY, json.toString()).apply()
     }
 
@@ -139,13 +143,17 @@ object PaperTradeMonitor {
             entryAsk = json.getDouble("entryAsk"),
             entryTimestampMillis = json.getLong("entryTimestampMillis"),
             source = json.optString("source", "UNKNOWN"),
+            lotSize = json.optDouble("lotSize", 0.01),
+            contractSizeOunces = json.optDouble("contractSizeOunces", 100.0),
+            commissionPerLotRoundTurnUsd = json.optDouble("commissionPerLotRoundTurnUsd", 0.0),
             status = PaperTradeStatus.valueOf(json.getString("status")),
             exitPrice = nullableDouble("exitPrice"),
             exitBid = nullableDouble("exitBid"),
             exitAsk = nullableDouble("exitAsk"),
             exitTimestampMillis = nullableLong("exitTimestampMillis"),
             exitReason = if (json.isNull("exitReason")) null else PaperExitReason.valueOf(json.getString("exitReason")),
-            pnlPrice = nullableDouble("pnlPrice")
+            pnlPrice = nullableDouble("pnlPrice"),
+            pnlUsd = nullableDouble("pnlUsd")
         )
     } catch (_: Exception) {
         null
