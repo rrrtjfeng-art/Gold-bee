@@ -138,15 +138,24 @@ class MainActivity : AppCompatActivity() {
             MODE_PRIVATE
         )
         val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
-        if (!serviceEnabled) {
-            mt5ObservationText.text =
-                "状态：权限未开启。点击“开启屏幕读取权限”，在 Android 无障碍设置中手动启用 Gold Bee。"
+        val sourceRaw = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val ocrStatus = observation.getString(
+            com.goldbee.mt5.Mt5ScreenCaptureService.KEY_OCR_STATUS,
+            ""
+        ).orEmpty()
+        if (observedAt <= 0L) {
+            val base = if (serviceEnabled) {
+                "状态：无障碍权限已开启；切换到官方 MT5 并停留几秒，再返回 Gold Bee。"
+            } else {
+                "状态：无障碍权限未开启。可启用无障碍文字读取，或单独使用下方的屏幕 OCR。"
+            }
+            mt5ObservationText.text = if (ocrStatus.isBlank()) base else "$base\\n$ocrStatus"
             mt5ObservationText.setTextColor(gold)
             return
         }
-        if (observedAt <= 0L) {
+        if (!serviceEnabled && sourceRaw != "SCREEN_OCR") {
             mt5ObservationText.text =
-                "状态：权限已开启，但还没有 MT5 屏幕记录。切换到官方 MT5 并停留几秒，再返回 Gold Bee。"
+                "最近一次记录来自无障碍读取，但权限当前未开启。你仍可单独启动屏幕 OCR。"
             mt5ObservationText.setTextColor(gold)
             return
         }
@@ -161,10 +170,6 @@ class MainActivity : AppCompatActivity() {
         val ageSeconds = ((System.currentTimeMillis() - observedAt).coerceAtLeast(0L)) / 1000L
         val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
             .let { if (it == "SCREEN_OCR") "屏幕 OCR" else "无障碍文字读取" }
-        val ocrStatus = observation.getString(
-            com.goldbee.mt5.Mt5ScreenCaptureService.KEY_OCR_STATUS,
-            ""
-        ).orEmpty()
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(observedAt))
         mt5ObservationText.text = buildString {
             appendLine("状态：已读取到屏幕文字（只读观察）· 来源：$source")
@@ -338,6 +343,10 @@ class MainActivity : AppCompatActivity() {
                 android.content.Intent(this, com.goldbee.mt5.Mt5ScreenCaptureService::class.java)
                     .setAction(com.goldbee.mt5.Mt5ScreenCaptureService.ACTION_STOP)
             )
+            getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+                .edit()
+                .putString(com.goldbee.mt5.Mt5ScreenCaptureService.KEY_OCR_STATUS, "屏幕 OCR 已停止。")
+                .apply()
             refreshMt5Observation()
         }
         mt5Card.addView(ocrRow)
