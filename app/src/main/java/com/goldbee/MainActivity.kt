@@ -22,6 +22,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.StrategyBacktester
+import com.goldbee.analysis.StrategyTrainer
 import com.goldbee.analysis.TakeProfitPlanner
 import com.goldbee.analysis.TakeProfitStyle
 import com.goldbee.analysis.MultiTimeframeAnalysis
@@ -837,6 +838,13 @@ class MainActivity : AppCompatActivity() {
         )
         addButton(analysis, "加载历史数据并分析", true) { loadHistoricalAnalysis() }
         addButton(analysis, "回测当前策略") { runStrategyBacktest() }
+        addButton(analysis, "训练参数并做样本外验证") { runStrategyTraining() }
+        addLabel(
+            analysis,
+            "训练会比较 12 组入场门槛与目标盈亏比，只用前 70% 历史段挑选参数，再用后 30% 做独立验证。它是参数网格搜索，不是自动学习或盈利保证。",
+            10f,
+            muted
+        )
         backtestText = addLabel(
             analysis,
             "尚未回测。可设置往返成本假设，并同时查看扣成本前后的结果；回测仍不等于实盘预测。",
@@ -2381,6 +2389,73 @@ class MainActivity : AppCompatActivity() {
         decisionReasonText.text = decisionReasonText.text.toString() +
             "\n\n报价来源：MT5 屏幕读取，经你手动确认；报价年龄：${ageMillis} ms。" +
             "\n历史 K 线来源仍为 Twelve Data。信号未经充分回测，不保证盈利；应用不会自动下单。"
+    }
+
+    private fun runStrategyTraining() {
+        val roundTripCostPrice = backtestCostInput.text.toString().trim().toDoubleOrNull()
+        if (roundTripCostPrice == null || !roundTripCostPrice.isFinite() || roundTripCostPrice < 0.0) {
+            backtestText.text = "无法训练：往返成本必须是大于或等于 0 的有效数字。"
+            backtestText.setTextColor(red)
+            return
+        }
+        val candles = latestCandles.mapValues { (_, series) -> series.toList() }
+        if (listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
+                candles[it].orEmpty().size < 50
+            }
+        ) {
+            backtestText.text = "无法训练：请先加载 M5、M15、H1 历史 K 线。建议 M5 至少 180 根，数据越长越有参考价值。"
+            backtestText.setTextColor(red)
+            return
+        }
+
+        backtestText.text = "正在比较 12 组参数：训练段选择参数，后 30% 历史作为样本外验证……"
+        backtestText.setTextColor(gold)
+        ioExecutor.execute {
+            try {
+                val result = StrategyTrainer.trainAndValidate(
+                    sourceCandles = candles,
+                    roundTripCostPrice = roundTripCostPrice,
+                    maxHoldBars = 48,
+                    trainingFraction = 0.70
+                )
+                fun describe(label: String, stats: com.goldbee.analysis.BacktestResult): String {
+                    val pf = stats.profitFactor?.let { fmt(it) } ?: "—"
+                    return "$label：交易 ${stats.trades.size} 笔 · 胜率 ${fmt(stats.winRatePercent)}% · 净期望 ${fmt(stats.expectancyR)}R/笔 · 累计 ${fmt(stats.totalR)}R · PF $pf · 最大回撤 ${fmt(stats.maxDrawdownR)}R"
+                }
+                val rendered = buildString {
+                    appendLine("Gold-bee 参数研究报告（不自动下单）")
+                    appendLine("候选参数：${result.candidatesEvaluated} 组 · 训练/验证按时间顺序切分 70% / 30%")
+                    appendLine("选择结果：最低多空评分 ${result.selectedConfig.minimumScore} · 目标盈亏比 1:${fmt(result.selectedConfig.targetR)}")
+                    appendLine("成本假设：每笔往返 ${fmt(result.validation.roundTripCostPrice)} 美元价格距离；0 表示没有扣成本")
+                    appendLine()
+                    appendLine(describe("训练段", result.training))
+                    appendLine(describe("样本外验证段", result.validation))
+                    appendLine()
+                    appendLine(result.selectionNote)
+                    if (result.training.sampleIsTooSmall || result.validation.sampleIsTooSmall) {
+                        appendLine("警告：至少一个阶段样本太少（少于 30 笔或覆盖不足 7 天）；暂时不能判断策略有稳定优势。")
+                    }
+                    if (result.validation.trades.size < 30) {
+                        appendLine("样本外交易少于 30 笔。不要据此放大手数或转为实盘。")
+                    } else if (result.validation.expectancyR <= 0.0) {
+                        appendLine("样本外净期望不为正：当前参数没有通过这次验证，不应当作可用盈利信号。")
+                    } else {
+                        appendLine("样本外净期望为正只是初步结果；仍需更多月份、不同波动环境和真实点差验证。")
+                    }
+                    appendLine()
+                    appendLine("回放限制：使用下一根 M5 开盘模拟进场；同一根 K 线同时触及 SL/TP 时按止损先发生。固定成本不能替代历史 Bid/Ask、动态点差、滑点和执行延迟。")
+                }
+                runOnUiThread {
+                    backtestText.text = rendered
+                    backtestText.setTextColor(if (result.validation.sampleIsTooSmall || result.validation.expectancyR <= 0.0) gold else white)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    backtestText.text = "参数训练失败：${error.message ?: "未知错误"}"
+                    backtestText.setTextColor(red)
+                }
+            }
+        }
     }
 
     private fun runStrategyBacktest() {
