@@ -65,6 +65,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var goldPriceKeyInput: EditText
     private lateinit var liveFeedStatusText: TextView
     private lateinit var liveFeedQuoteText: TextView
+    private lateinit var liveFeedAnalysisText: TextView
+    @Volatile private var lastLiveAnalysisQueuedAt: Long = 0L
     private var liveFeedClient: GoldPriceDevWebSocketClient? = null
     private val liveFeedController = MarketFeedController()
     private val liveFeedListener = object : MarketTickListener {
@@ -80,6 +82,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 liveFeedQuoteText.setTextColor(if (accepted) green else gold)
             }
+            if (accepted) refreshLiveFeedAnalysis(tick)
         }
 
         override fun onConnected(source: String) {
@@ -361,6 +364,12 @@ class MainActivity : AppCompatActivity() {
         liveFeedCard.addView(goldPriceKeyInput, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) })
         liveFeedStatusText = addLabel(liveFeedCard, "状态：尚未连接实时行情", 12f, gold)
         liveFeedQuoteText = addLabel(liveFeedCard, "Bid：— · Ask：— · Spread：—", 13f, white)
+        liveFeedAnalysisText = addLabel(
+            liveFeedCard,
+            "实时结构分析：等待有效行情与历史 K 线。请先加载历史数据并分析。",
+            12f,
+            muted
+        )
         val liveFeedButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(liveFeedButtons, "保存实时行情 Key") {
             val entered = goldPriceKeyInput.text.toString().trim()
@@ -877,6 +886,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val analysis = MultiTimeframeAnalyzer.analyze(candleMap)
+                liveFeedController.seedHistoricalCandles(candleMap)
                 latestCandles = candleMap.toMap()
                 latestAnalysis = analysis
                 val rendered = buildString {
@@ -923,6 +933,86 @@ class MainActivity : AppCompatActivity() {
                     decisionText.text = "NO TRADE"
                     decisionText.setTextColor(red)
                     decisionReasonText.text = "数据获取或解析失败。检查 Twelve Data Key、套餐权限、网络和请求额度。"
+                }
+            }
+        }
+    }
+
+    /**
+     * Re-analyzes locally aggregated M5/M15/H1 candles after a verified
+     * third-party spot tick. This is reference analysis only: until a matching
+     * MT5 broker quote is independently verified, it must never produce an
+     * actionable BUY/SELL setup.
+     */
+    private fun refreshLiveFeedAnalysis(tick: MarketTick) {
+        val now = System.currentTimeMillis()
+        if (now - lastLiveAnalysisQueuedAt < 1500L) return
+        lastLiveAnalysisQueuedAt = now
+
+        val candleMap = linkedMapOf(
+            Timeframe.M5 to liveFeedController.getCandles(Timeframe.M5),
+            Timeframe.M15 to liveFeedController.getCandles(Timeframe.M15),
+            Timeframe.H1 to liveFeedController.getCandles(Timeframe.H1)
+        )
+
+        if (candleMap.values.any { it.size < 50 }) {
+            runOnUiThread {
+                if (::liveFeedAnalysisText.isInitialized) {
+                    liveFeedAnalysisText.text =
+                        "实时报价已接收，但历史 K 线不足（M5/M15/H1 每周期至少 50 根）。先点击“加载历史数据并分析”。当前仍为 NO TRADE。"
+                    liveFeedAnalysisText.setTextColor(gold)
+                }
+                if (::decisionText.isInitialized) {
+                    decisionText.text = "NO TRADE"
+                    decisionText.setTextColor(red)
+                    decisionReasonText.text =
+                        "第三方现货报价不是已核验的 MT5 经纪商报价；且历史 K 线不足。不能把该数据当成可执行进场信号。"
+                }
+            }
+            return
+        }
+
+        val stableCandles = candleMap.mapValues { (_, candles) -> candles.toList() }
+        ioExecutor.execute {
+            try {
+                val analysis = MultiTimeframeAnalyzer.analyze(stableCandles)
+                val m15 = analysis.m15
+                val swing = SwingSupportResistanceAnalyzer.analyze(
+                    candles = stableCandles[Timeframe.M15].orEmpty(),
+                    leftBars = 3,
+                    rightBars = 3,
+                    currentPrice = tick.midPrice,
+                    atr = m15.indicators.atr14
+                )
+                val rendered = buildString {
+                    appendLine("实时结构参考 · 来源：GoldPrice.dev 现货流")
+                    appendLine("最新中间价：\${fmt(tick.midPrice)} · 点差：\${fmt(tick.spread)}")
+                    appendLine("M5：\${trendLabel(analysis.m5.structure.trend)} · M15：\${trendLabel(m15.structure.trend)} · H1：\${trendLabel(analysis.h1.structure.trend)}")
+                    appendLine("M15 EMA20：\${fmt(m15.indicators.ema20)} · RSI14：\${fmt(m15.indicators.rsi14)} · ATR14：\${fmt(m15.indicators.atr14)}")
+                    appendLine("支撑区：\${swing.supportZones.take(3).joinToString(" | ") { "\${fmt(it.low)}–\${fmt(it.high)}（\${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
+                    appendLine("阻力区：\${swing.resistanceZones.take(3).joinToString(" | ") { "\${fmt(it.low)}–\${fmt(it.high)}（\${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
+                    appendLine()
+                    append("限制：第三方现货报价可能与 MT5 经纪商报价和点差不同；这部分只显示结构偏向，不授权进场。")
+                }
+                runOnUiThread {
+                    if (::liveFeedAnalysisText.isInitialized) {
+                        liveFeedAnalysisText.text = rendered
+                        liveFeedAnalysisText.setTextColor(white)
+                    }
+                    if (::decisionText.isInitialized) {
+                        decisionText.text = "NO TRADE"
+                        decisionText.setTextColor(red)
+                        decisionReasonText.text =
+                            "已更新实时技术结构参考，但未核对 MT5 经纪商 Bid/Ask、实际点差和订单规格。当前行情来源不具备执行资格。最终进场信号仍被锁定。"
+                    }
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    if (::liveFeedAnalysisText.isInitialized) {
+                        liveFeedAnalysisText.text =
+                            "实时结构分析失败：\${error.message ?: "未知错误"}。保留 NO TRADE。"
+                        liveFeedAnalysisText.setTextColor(gold)
+                    }
                 }
             }
         }
