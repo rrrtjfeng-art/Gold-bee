@@ -38,6 +38,7 @@ class GoldPriceDevWebSocketClient(
     @Volatile private var terminalFailure = false
     private var reconnectAttempt = 0
     private var reconnectFuture: ScheduledFuture<*>? = null
+    private var handshakeTimeoutFuture: ScheduledFuture<*>? = null
     private val reconnectScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
         Thread(runnable, "GoldBee-WebSocket-Reconnect").apply { isDaemon = true }
     }
@@ -75,6 +76,8 @@ class GoldPriceDevWebSocketClient(
                     if (!sent) {
                         listener.onError(source, "发送行情认证请求失败")
                         webSocket.close(1011, "Authentication frame could not be sent")
+                    } else {
+                        scheduleHandshakeTimeout(webSocket)
                     }
                 }
 
@@ -115,6 +118,7 @@ class GoldPriceDevWebSocketClient(
         userRequestedDisconnect = true
         terminalFailure = false
         cancelReconnectLocked()
+        cancelHandshakeTimeoutLocked()
         val current = socket
         socket = null
         subscriptionConfirmed = false
@@ -136,6 +140,7 @@ class GoldPriceDevWebSocketClient(
             } else {
                 socket = null
                 subscriptionConfirmed = false
+                cancelHandshakeTimeoutLocked()
                 if (!WebSocketReconnectPolicy.shouldRetry(
                         closeCode = closeCode,
                         httpStatusCode = httpStatusCode
@@ -182,6 +187,7 @@ class GoldPriceDevWebSocketClient(
                     synchronized(this) {
                         reconnectAttempt = 0
                         cancelReconnectLocked()
+                        cancelHandshakeTimeoutLocked()
                     }
                     listener.onConnected(source)
                 } else {
@@ -242,6 +248,28 @@ class GoldPriceDevWebSocketClient(
                 openSocketLocked()
             }
         }, delay, TimeUnit.MILLISECONDS)
+    }
+
+    private fun scheduleHandshakeTimeout(webSocket: WebSocket) {
+        synchronized(this) {
+            cancelHandshakeTimeoutLocked()
+            handshakeTimeoutFuture = reconnectScheduler.schedule({
+                val timedOut = synchronized(this@GoldPriceDevWebSocketClient) {
+                    handshakeTimeoutFuture = null
+                    socket === webSocket && !subscriptionConfirmed && !userRequestedDisconnect
+                }
+                if (timedOut) {
+                    listener.onError(source, "行情连接超时：服务器未在 12 秒内确认订阅")
+                    webSocket.close(1011, "Subscription confirmation timeout")
+                }
+            }, HANDSHAKE_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        }
+    }
+
+    @Synchronized
+    private fun cancelHandshakeTimeoutLocked() {
+        handshakeTimeoutFuture?.cancel(false)
+        handshakeTimeoutFuture = null
     }
 
     @Synchronized
