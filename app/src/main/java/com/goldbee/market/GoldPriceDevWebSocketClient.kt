@@ -86,7 +86,9 @@ class GoldPriceDevWebSocketClient(
                     handleSocketEnded(
                         webSocket = webSocket,
                         closeCode = null,
-                        errorMessage = t.message ?: "行情 WebSocket 连接失败"
+                        httpStatusCode = response?.code,
+                        errorMessage = response?.code?.let { "行情服务 HTTP $it" }
+                            ?: t.message ?: "行情 WebSocket 连接失败"
                     )
                 }
 
@@ -125,7 +127,8 @@ class GoldPriceDevWebSocketClient(
     private fun handleSocketEnded(
         webSocket: WebSocket,
         closeCode: Int?,
-        errorMessage: String?
+        errorMessage: String?,
+        httpStatusCode: Int? = null
     ) {
         val wasCurrent = synchronized(this) {
             if (socket !== webSocket) {
@@ -133,7 +136,11 @@ class GoldPriceDevWebSocketClient(
             } else {
                 socket = null
                 subscriptionConfirmed = false
-                if (!WebSocketReconnectPolicy.shouldRetry(closeCode = closeCode)) {
+                if (!WebSocketReconnectPolicy.shouldRetry(
+                        closeCode = closeCode,
+                        httpStatusCode = httpStatusCode
+                    )
+                ) {
                     terminalFailure = true
                 }
                 true
@@ -144,7 +151,7 @@ class GoldPriceDevWebSocketClient(
         if (!wasCurrent) return
         listener.onDisconnected(source)
         if (errorMessage != null) listener.onError(source, errorMessage)
-        scheduleReconnect(closeCode = closeCode)
+        scheduleReconnect(closeCode = closeCode, httpStatusCode = httpStatusCode)
     }
 
     private fun handleMessage(webSocket: WebSocket, raw: String) {
@@ -208,11 +215,17 @@ class GoldPriceDevWebSocketClient(
     }
 
     @Synchronized
-    private fun scheduleReconnect(closeCode: Int? = null) {
+    private fun scheduleReconnect(
+        closeCode: Int? = null,
+        httpStatusCode: Int? = null
+    ) {
         if (
             userRequestedDisconnect ||
             terminalFailure ||
-            !WebSocketReconnectPolicy.shouldRetry(closeCode = closeCode)
+            !WebSocketReconnectPolicy.shouldRetry(
+                closeCode = closeCode,
+                httpStatusCode = httpStatusCode
+            )
         ) return
         if (reconnectFuture?.isDone == false) return
 
