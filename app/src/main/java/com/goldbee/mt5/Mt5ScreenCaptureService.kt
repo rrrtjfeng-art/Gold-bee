@@ -221,8 +221,17 @@ class Mt5ScreenCaptureService : Service() {
     }
 
     private fun saveObservation(observation: Mt5ScreenObservation) {
-        getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE).edit()
-            .putLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, System.currentTimeMillis())
+        val prefs = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+        val previousBid = prefs.getString(Mt5ScreenAccessibilityService.KEY_BID, "").orEmpty().toDoubleOrNull()
+        val previousAsk = prefs.getString(Mt5ScreenAccessibilityService.KEY_ASK, "").orEmpty().toDoubleOrNull()
+        val hasNewQuote = Mt5QuoteFreshness.isNewExecutableQuote(
+            symbol = observation.symbol,
+            bid = observation.bid,
+            ask = observation.ask,
+            previousBid = previousBid,
+            previousAsk = previousAsk
+        )
+        val editor = prefs.edit()
             .putString(Mt5ScreenAccessibilityService.KEY_SYMBOL, observation.symbol.orEmpty())
             .putString(Mt5ScreenAccessibilityService.KEY_TIMEFRAME, observation.timeframe.orEmpty())
             .putString(Mt5ScreenAccessibilityService.KEY_DIRECTION, observation.direction.orEmpty())
@@ -238,7 +247,13 @@ class Mt5ScreenCaptureService : Service() {
                 if (observation.hasTradeLevels) "已识别方向与 Entry/SL/TP；仍需人工核对。"
                 else "已读取屏幕文字，但未能完整识别信号价位；缺少价位时禁止跟随。"
             )
-            .apply()
+        if (hasNewQuote) {
+            editor.putLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, System.currentTimeMillis())
+        } else if (previousBid == null || previousAsk == null) {
+            // A repeated OCR frame is not proof that the underlying MT5 quote changed.
+            editor.putLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        }
+        editor.apply()
         PaperTradeMonitor.checkAndUpdate(this)
 
         // A quiet, deduplicated notification lets the user know when the screen contains
