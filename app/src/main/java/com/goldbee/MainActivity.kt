@@ -1590,7 +1590,18 @@ class MainActivity : AppCompatActivity() {
         )
         val setup = decision.setup
         decisionReasonText.text = if (setup == null) {
-            decision.reason
+            val plainMeaning = when (decision.action) {
+                DecisionAction.BUY -> "系统条件暂时偏向买入；这不代表价格一定上涨。"
+                DecisionAction.SELL -> "系统条件暂时偏向卖出；这不代表价格一定下跌。"
+                DecisionAction.WAIT -> "目前条件不够清楚，先等。没有交易也是有效决定，不需要为了频繁交易而勉强进场。"
+                DecisionAction.NO_TRADE -> "当前数据或风险检查不符合要求，因此不给出可执行的交易计划。不要绕过这个检查。"
+            }
+            val nextStep = when (decision.action) {
+                DecisionAction.BUY, DecisionAction.SELL -> "下一步：检查 MT5 当前 Bid/Ask、点差、止损和模拟账户风险，再决定是否做模拟交易。"
+                DecisionAction.WAIT -> "下一步：检查下方系统理由；等新 K 线或有效报价后再分析，不要追着价格跑。"
+                DecisionAction.NO_TRADE -> "下一步：按系统理由补齐或修正数据，再重新分析。旧信号、过期报价或缺失历史数据都不应拿来进场。"
+            }
+            "$plainMeaning\n\n系统理由：${decision.reason}\n\n$nextStep"
         } else {
             val targetOptions = TakeProfitPlanner.targets(
                 direction = setup.direction,
