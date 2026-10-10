@@ -187,13 +187,6 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
-    override fun onDestroy() {
-        liveFeedClient?.disconnect()
-        liveFeedClient = null
-        ioExecutor.shutdownNow()
-        super.onDestroy()
-    }
-
     private fun refreshMt5Observation() {
         if (!::mt5ObservationText.isInitialized) return
         val enabledServices = Settings.Secure.getString(
@@ -947,6 +940,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         polling = false
         handler.removeCallbacks(pollRunnable)
+        liveFeedClient?.disconnect()
+        liveFeedClient = null
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
