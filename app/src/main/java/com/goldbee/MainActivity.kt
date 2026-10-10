@@ -51,6 +51,8 @@ import com.goldbee.paper.PaperSignal
 import com.goldbee.paper.PaperTrade
 import com.goldbee.paper.PaperTradeStatus
 import com.goldbee.paper.PaperTradingEngine
+import com.goldbee.paper.PaperTradeHistoryStore
+import com.goldbee.paper.PaperTradePerformance
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -144,6 +146,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var paperTradeText: TextView
+    private lateinit var paperTradeHistoryText: TextView
     private lateinit var paperTpStatusText: TextView
     private lateinit var paperTpSmallButton: Button
     private lateinit var paperTpMediumButton: Button
@@ -709,6 +712,8 @@ class MainActivity : AppCompatActivity() {
             12f,
             white
         )
+        addLabel(decision, "模拟交易统计与最近记录", 13f, white, true)
+        paperTradeHistoryText = addLabel(decision, "尚无已平仓模拟交易。", 11f, muted)
         val paperRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(paperRow, "确认信号并开模拟单", true) { confirmPaperTrade() }
         addButton(paperRow, "刷新报价并检查 SL/TP") { updatePaperTradeFromQuote() }
@@ -1254,10 +1259,10 @@ class MainActivity : AppCompatActivity() {
         )
         showDecision(gated.decision)
         decisionReasonText.text = decisionReasonText.text.toString() +
-            "\\n\\n报价来源：MT5 屏幕读取（观察年龄 ${age} ms）" +
-            "\\nBid：${fmt(quote.bid)} · Ask：${fmt(quote.ask)} · 点差：${fmt(quote.ask - quote.bid)}" +
-            "\\n风险闸门：${gated.reason}" +
-            "\\n注意：这是根据屏幕报价与已加载历史 K 线计算的方案，不保证盈利；确认模拟单时会再次检查报价与追价距离。"
+            "\n\n报价来源：MT5 屏幕读取（观察年龄 ${age} ms）" +
+            "\nBid：${fmt(quote.bid)} · Ask：${fmt(quote.ask)} · 点差：${fmt(quote.ask - quote.bid)}" +
+            "\n风险闸门：${gated.reason}" +
+            "\n注意：这是根据屏幕报价与已加载历史 K 线计算的方案，不保证盈利；确认模拟单时会再次检查报价与追价距离。"
     }
 
     private fun showDecision(decision: DecisionResult) {
@@ -1481,6 +1486,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recordPaperClosure(trade: PaperTrade) {
+        PaperTradeHistoryStore.append(this, trade)
         val pnl = trade.pnlUsd ?: return
         val wins = prefs.getInt("paper_money_wins", 0) + if (pnl > 0.0) 1 else 0
         val losses = prefs.getInt("paper_money_losses", 0) + if (pnl < 0.0) 1 else 0
@@ -1569,13 +1575,30 @@ class MainActivity : AppCompatActivity() {
     private fun refreshPaperTradeStatus() {
         if (!::paperTradeText.isInitialized) return
         val trade = loadPaperTrade()
-        val wins = prefs.getInt("paper_money_wins", 0)
-        val losses = prefs.getInt("paper_money_losses", 0)
-        val flats = prefs.getInt("paper_money_flats", 0)
-        val totalUsd = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble()
-        val startBalance = if (::paperBalanceInput.isInitialized) paperBalanceInput.text.toString().trim().toDoubleOrNull() ?: (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0) else (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0)
+        val startBalance = if (::paperBalanceInput.isInitialized) {
+            paperBalanceInput.text.toString().trim().toDoubleOrNull()
+                ?: (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0)
+        } else {
+            prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0
+        }
+        val records = PaperTradeHistoryStore.load(this)
+        val summary = PaperTradePerformance.summarize(records, startBalance / accountScale())
+        val totalUsd = summary.totalNetUsd
         val realizedBalance = startBalance + totalUsd * accountScale()
-        val stats = "模拟账户：初始 ${String.format(Locale.US, "%.2f", startBalance)} ${accountUnitLabel()} · 已实现净盈亏 ${fmtAccountMoney(totalUsd)} · 余额 ${String.format(Locale.US, "%.2f", realizedBalance)} ${accountUnitLabel()}\\n净盈利 $wins · 净亏损 $losses · 持平 $flats"
+        val pf = summary.profitFactor?.let { String.format(Locale.US, "%.2f", it) } ?: "—"
+        val stats = "已平仓 ${summary.trades} 笔 · 胜率 ${String.format(Locale.US, "%.1f", summary.winRatePercent)}% · Profit Factor $pf\n净盈亏 ${fmtAccountMoney(totalUsd)} · 模拟余额 ${String.format(Locale.US, "%.2f", realizedBalance)} ${accountUnitLabel()} · 最大回撤 ${fmtAccountMoney(summary.maxDrawdownUsd)}"
+        if (::paperTradeHistoryText.isInitialized) {
+            val recent = records.sortedByDescending { it.exitTimestampMillis }.take(5)
+            paperTradeHistoryText.text = if (recent.isEmpty()) {
+                "尚无已平仓模拟交易。"
+            } else {
+                recent.joinToString("\n") { item ->
+                    val time = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(item.exitTimestampMillis))
+                    "$time · ${item.direction} · ${fmt(item.entryPrice)} → ${fmt(item.exitPrice)} · ${fmtAccountMoney(item.pnlUsd)} · ${item.exitReason} · ${item.source}"
+                }
+            }
+            paperTradeHistoryText.setTextColor(white)
+        }
         val monitorStatus = prefs.getString("paper_monitor_status", "尚未开始自动检查").orEmpty()
         val observedPrefs = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
         val quoteAge = System.currentTimeMillis() - observedPrefs.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
@@ -1595,13 +1618,13 @@ class MainActivity : AppCompatActivity() {
                     trade.commissionPerLotRoundTurnUsd * trade.lotSize
             }
             val equity = if (floatingUsd == null) realizedBalance else realizedBalance + floatingUsd * accountScale()
-            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\\n$monitorLine\\n$stats"
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\n$monitorLine\n$stats"
             paperTradeText.setTextColor(if (monitorFresh) gold else red)
         } else if (trade?.status == PaperTradeStatus.CLOSED) {
-            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason}\\n价格变动：${fmt(trade.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(trade.pnlUsd)}\\n$stats"
+            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason}\n价格变动：${fmt(trade.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(trade.pnlUsd)}\n$stats"
             paperTradeText.setTextColor(if ((trade.pnlUsd ?: 0.0) >= 0.0) green else red)
         } else {
-            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\\n$stats"
+            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\n$stats"
             paperTradeText.setTextColor(white)
         }
     }
