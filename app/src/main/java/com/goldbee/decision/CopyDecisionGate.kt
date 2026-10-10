@@ -27,6 +27,11 @@ object CopyDecisionGate {
             return blocked("当前行情价格无效。")
         }
 
+        val normalizedSymbol = snapshot.symbol.uppercase().replace("/", "").trim()
+        if (!normalizedSymbol.contains("XAUUSD") && normalizedSymbol != "GOLD") {
+            return blocked("当前行情品种不是可识别的黄金品种，禁止审核复制信号。")
+        }
+
         if (snapshot.source.contains("Twelve Data", ignoreCase = true)) {
             return blocked(
                 "当前行情源只有参考价，没有真实 bid/ask 点差；无法评估复制信号的净盈亏比，禁止跟随。请使用具备真实买卖报价的行情源。"
@@ -53,8 +58,37 @@ object CopyDecisionGate {
             signal.entry
                 ?: return blocked("Entry 无效。")
 
-        val currentPrice =
-            snapshot.midPrice
+        // BUY enters on Ask; SELL enters on Bid. Keep the original signal Entry
+        // solely as the anti-chasing reference.
+        val currentPrice = when (signal.direction) {
+            TradeDirection.BUY -> snapshot.ask
+            TradeDirection.SELL -> snapshot.bid
+        }
+
+        val stopLoss = signal.stopLoss
+            ?: return blocked("缺少明确止损 SL。")
+        val takeProfit = signal.takeProfit
+            ?: return blocked("缺少明确止盈 TP。")
+        val levelsMatchDirection = when (signal.direction) {
+            TradeDirection.BUY -> stopLoss < entry && takeProfit > entry
+            TradeDirection.SELL -> stopLoss > entry && takeProfit < entry
+        }
+        if (!levelsMatchDirection) {
+            return blocked("SL/TP 与信号方向不匹配，禁止跟随。")
+        }
+        val alreadyResolved = when (signal.direction) {
+            TradeDirection.BUY -> when {
+                snapshot.bid <= stopLoss -> "当前 Bid 已到达或跌破原信号 SL，信号失效。"
+                snapshot.bid >= takeProfit -> "当前 Bid 已到达或超过原信号 TP，禁止重复追入。"
+                else -> null
+            }
+            TradeDirection.SELL -> when {
+                snapshot.ask >= stopLoss -> "当前 Ask 已到达或超过原信号 SL，信号失效。"
+                snapshot.ask <= takeProfit -> "当前 Ask 已到达或跌破原信号 TP，禁止重复追入。"
+                else -> null
+            }
+        }
+        if (alreadyResolved != null) return blocked(alreadyResolved)
 
         val atr =
             analysis.m15.indicators.atr14
@@ -144,7 +178,7 @@ object CopyDecisionGate {
         }
 
         val reason =
-            "复制信号通过 Entry、行情新鲜度、ATR 距离和 M15 方向检查，可以进入用户确认阶段。"
+            "复制信号通过原 Entry 追价距离、当前可执行报价、SL/TP 有效性、行情新鲜度、点差和 M15 方向检查；仍需人工确认，不代表实际胜率。"
 
         return CopyDecisionResult(
             decision = DecisionResult(
@@ -157,7 +191,7 @@ object CopyDecisionGate {
                             DecisionAction.SELL
                     },
                 setup = setup,
-                confidence = 1.0,
+                confidence = 0.0,
                 reason = reason
             ),
             followable = true,
@@ -170,9 +204,7 @@ object CopyDecisionGate {
         currentPrice: Double
     ): TradeSetup {
 
-        val entry =
-            signal.entry
-                ?: currentPrice
+        val entry = currentPrice
 
         val stopLoss =
             requireNotNull(signal.stopLoss) {
