@@ -151,11 +151,13 @@ object CopyDecisionGate {
             return blocked("复制信号的交易方案无效。")
         }
 
-        // Screen the signal on estimated reward after spread, not gross chart distances alone.
+        // Entry is the executable side (Ask for BUY, Bid for SELL), so spread
+        // is already reflected in the entry price. Do not count it twice.
+        // Spread is separately gated against ATR above.
         val stopDistance = abs(setup.entry - setup.stopLoss)
         val targetDistance = abs(setup.takeProfit - setup.entry)
-        val netReward = targetDistance - snapshot.spread
-        val netRisk = stopDistance + snapshot.spread
+        val netReward = targetDistance
+        val netRisk = stopDistance
 
         if (
             !netReward.isFinite() ||
