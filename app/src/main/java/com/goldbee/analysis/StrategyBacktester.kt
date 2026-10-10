@@ -1,0 +1,248 @@
+package com.goldbee.analysis
+
+import com.goldbee.decision.DecisionAction
+import com.goldbee.decision.MultiTimeframeDecisionEngine
+import com.goldbee.decision.TradeDirection
+import com.goldbee.decision.TradeSetup
+import com.goldbee.market.Candle
+import com.goldbee.market.Timeframe
+import kotlin.math.abs
+import kotlin.math.max
+
+enum class BacktestExitType {
+    STOP_LOSS,
+    TAKE_PROFIT,
+    TIME_EXIT
+}
+
+data class BacktestTrade(
+    val direction: TradeDirection,
+    val signalTimeSeconds: Long,
+    val entryTimeSeconds: Long,
+    val exitTimeSeconds: Long,
+    val entryPrice: Double,
+    val stopLoss: Double,
+    val takeProfit: Double,
+    val exitPrice: Double,
+    val rMultiple: Double,
+    val exitType: BacktestExitType
+)
+
+data class BacktestResult(
+    val sampleBars: Int,
+    val trades: List<BacktestTrade>,
+    val wins: Int,
+    val losses: Int,
+    val winRatePercent: Double,
+    val totalR: Double,
+    val expectancyR: Double,
+    val profitFactor: Double?,
+    val maxDrawdownR: Double,
+    val sampleStartSeconds: Long?,
+    val sampleEndSeconds: Long?
+) {
+    val sampleDurationDays: Double
+        get() {
+            val start = sampleStartSeconds ?: return 0.0
+            val end = sampleEndSeconds ?: return 0.0
+            return ((end - start).coerceAtLeast(0L)).toDouble() / 86400.0
+        }
+
+    val sampleIsTooSmall: Boolean
+        get() = trades.size < 30 || sampleDurationDays < 7.0
+}
+
+/**
+ * Walk-forward backtest of the current multi-timeframe decision engine.
+ *
+ * Each decision sees only candles whose close time is at or before the signal
+ * time. Entries execute at the next M5 open. If stop and target are both touched
+ * inside one candle, stop-loss is assumed first. Spread, slippage, commissions,
+ * broker-specific pricing, and rejected orders are not simulated.
+ */
+object StrategyBacktester {
+
+    fun run(
+        sourceCandles: Map<Timeframe, List<Candle>>,
+        maxHoldBars: Int = 48
+    ): BacktestResult {
+        require(maxHoldBars > 0) { "maxHoldBars must be greater than zero" }
+
+        val m5 = sourceCandles[Timeframe.M5].orEmpty().sortedBy { it.timestamp }
+        val m15 = sourceCandles[Timeframe.M15].orEmpty().sortedBy { it.timestamp }
+        val h1 = sourceCandles[Timeframe.H1].orEmpty().sortedBy { it.timestamp }
+        val trades = mutableListOf<BacktestTrade>()
+
+        if (m5.size < 51 || m15.size < 50 || h1.size < 50) {
+            return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp)
+        }
+
+        var signalIndex = 0
+        while (signalIndex < m5.lastIndex) {
+            val signalCandle = m5[signalIndex]
+            val decisionTime = signalCandle.timestamp + Timeframe.M5.seconds
+
+            val visibleM15 = m15.filter {
+                it.timestamp + Timeframe.M15.seconds <= decisionTime
+            }
+            val visibleH1 = h1.filter {
+                it.timestamp + Timeframe.H1.seconds <= decisionTime
+            }
+            val visibleM5 = m5.take(signalIndex + 1)
+
+            if (visibleM5.size < 50 || visibleM15.size < 50 || visibleH1.size < 50) {
+                signalIndex++
+                continue
+            }
+
+            val visible = mapOf(
+                Timeframe.M5 to visibleM5,
+                Timeframe.M15 to visibleM15,
+                Timeframe.H1 to visibleH1
+            )
+            val analysis = MultiTimeframeAnalyzer.analyze(visible)
+            val decision = MultiTimeframeDecisionEngine.decide(visible, analysis)
+            val setup = decision.setup
+            if (
+                (decision.action != DecisionAction.BUY && decision.action != DecisionAction.SELL) ||
+                setup == null
+            ) {
+                signalIndex++
+                continue
+            }
+
+            val entryIndex = signalIndex + 1
+            val entryCandle = m5[entryIndex]
+            val entry = entryCandle.open
+            if (!setupValidAtEntry(setup, entry)) {
+                signalIndex++
+                continue
+            }
+
+            val risk = abs(entry - setup.stopLoss)
+            val reward = abs(setup.takeProfit - entry)
+            if (!risk.isFinite() || !reward.isFinite() || risk <= 0.0 || reward / risk < 1.0) {
+                signalIndex++
+                continue
+            }
+
+            val lastScanIndex = minOf(m5.lastIndex, entryIndex + maxHoldBars - 1)
+            var exitIndex = lastScanIndex
+            var exitPrice = m5[lastScanIndex].close
+            var exitType = BacktestExitType.TIME_EXIT
+
+            for (index in entryIndex..lastScanIndex) {
+                val hit = resolveIntrabarExit(
+                    direction = setup.direction,
+                    candle = m5[index],
+                    stopLoss = setup.stopLoss,
+                    takeProfit = setup.takeProfit
+                )
+                if (hit != null) {
+                    exitIndex = index
+                    exitType = hit
+                    exitPrice = when (hit) {
+                        BacktestExitType.STOP_LOSS -> setup.stopLoss
+                        BacktestExitType.TAKE_PROFIT -> setup.takeProfit
+                        BacktestExitType.TIME_EXIT -> m5[index].close
+                    }
+                    break
+                }
+            }
+
+            val signedMove = when (setup.direction) {
+                TradeDirection.BUY -> exitPrice - entry
+                TradeDirection.SELL -> entry - exitPrice
+            }
+            val rMultiple = when (exitType) {
+                BacktestExitType.STOP_LOSS -> -1.0
+                BacktestExitType.TAKE_PROFIT -> reward / risk
+                BacktestExitType.TIME_EXIT -> signedMove / risk
+            }
+
+            trades += BacktestTrade(
+                direction = setup.direction,
+                signalTimeSeconds = signalCandle.timestamp,
+                entryTimeSeconds = entryCandle.timestamp,
+                exitTimeSeconds = m5[exitIndex].timestamp,
+                entryPrice = entry,
+                stopLoss = setup.stopLoss,
+                takeProfit = setup.takeProfit,
+                exitPrice = exitPrice,
+                rMultiple = rMultiple,
+                exitType = exitType
+            )
+            // One position at a time: do not open a new trade before this one exits.
+            signalIndex = exitIndex + 1
+        }
+
+        return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp)
+    }
+
+    internal fun resolveIntrabarExit(
+        direction: TradeDirection,
+        candle: Candle,
+        stopLoss: Double,
+        takeProfit: Double
+    ): BacktestExitType? {
+        val stopHit: Boolean
+        val targetHit: Boolean
+        when (direction) {
+            TradeDirection.BUY -> {
+                stopHit = candle.low <= stopLoss
+                targetHit = candle.high >= takeProfit
+            }
+            TradeDirection.SELL -> {
+                stopHit = candle.high >= stopLoss
+                targetHit = candle.low <= takeProfit
+            }
+        }
+        return when {
+            stopHit -> BacktestExitType.STOP_LOSS
+            targetHit -> BacktestExitType.TAKE_PROFIT
+            else -> null
+        }
+    }
+
+    private fun setupValidAtEntry(setup: TradeSetup, entry: Double): Boolean {
+        if (!entry.isFinite() || entry <= 0.0) return false
+        return when (setup.direction) {
+            TradeDirection.BUY -> setup.stopLoss < entry && setup.takeProfit > entry
+            TradeDirection.SELL -> setup.stopLoss > entry && setup.takeProfit < entry
+        }
+    }
+
+    private fun result(
+        sampleBars: Int,
+        trades: List<BacktestTrade>,
+        start: Long?,
+        end: Long?
+    ): BacktestResult {
+        val wins = trades.count { it.rMultiple > 0.0 }
+        val losses = trades.count { it.rMultiple < 0.0 }
+        val totalR = trades.sumOf { it.rMultiple }
+        val grossProfit = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
+        val grossLoss = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
+        var equity = 0.0
+        var peak = 0.0
+        var maxDrawdown = 0.0
+        trades.forEach { trade ->
+            equity += trade.rMultiple
+            peak = max(peak, equity)
+            maxDrawdown = max(maxDrawdown, peak - equity)
+        }
+        return BacktestResult(
+            sampleBars = sampleBars,
+            trades = trades.toList(),
+            wins = wins,
+            losses = losses,
+            winRatePercent = if (trades.isEmpty()) 0.0 else wins * 100.0 / trades.size,
+            totalR = totalR,
+            expectancyR = if (trades.isEmpty()) 0.0 else totalR / trades.size,
+            profitFactor = if (grossLoss > 0.0) grossProfit / grossLoss else null,
+            maxDrawdownR = maxDrawdown,
+            sampleStartSeconds = start,
+            sampleEndSeconds = end
+        )
+    }
+}
