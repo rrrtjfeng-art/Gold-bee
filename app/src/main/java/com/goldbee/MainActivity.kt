@@ -1044,11 +1044,23 @@ class MainActivity : AppCompatActivity() {
             white
         )
         val copySetupRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addButton(copySetupRow, "加载历史K线", true) { loadHistoricalAnalysis() }
+        addButton(copySetupRow, "加载历史K线", true) {
+            if (ApiKeyStore.get(this).isBlank() && twelveDataKeyInput.text.toString().isBlank()) {
+                copyResultText.text = "首次使用需要 Twelve Data API Key。已打开设置页，请填写并保存后返回 COPY。"
+                copyResultText.setTextColor(gold)
+                showTerminalPage("settings")
+                twelveDataKeyInput.requestFocus()
+            } else {
+                copyResultText.text = "正在加载 M5/M15/H1 历史 K 线…加载完成后再审核信号。"
+                copyResultText.setTextColor(gold)
+                loadHistoricalAnalysis()
+            }
+        }
         addButton(copySetupRow, "开启MT5读取") {
             startActivity(android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
-        copyCard.addView(copySetupRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        copyCard.addView(copySetupRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) })
+        addLabel(copyCard, "首次使用：先保存历史数据 API Key，再加载 K 线；然后在 Android「无障碍」设置中启用 Gold-bee 的 MT5 只读读取。", 10f, muted)
         copySignalInput = makeCopyInput()
         copySignalInput.hint = "在这里粘贴信号，例如：XAUUSD BUY Entry 4050 SL 4040 TP 4070"
         copyCard.addView(
