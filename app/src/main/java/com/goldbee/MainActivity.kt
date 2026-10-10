@@ -535,7 +535,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
-        addLabel(chartToolbar, "K 线图", 14f, white, true)
+        chartToolbar.addView(makeText("K 线图", 14f, white, true), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) })
         listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).forEach { timeframe ->
             val button = addButton(chartToolbar, timeframe.name, selectedChartTimeframe == timeframe) {
                 selectedChartTimeframe = timeframe
@@ -2425,7 +2425,7 @@ class MainActivity : AppCompatActivity() {
         }
         private val emaPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = gold
-            strokeWidth = dp(1.5f).toFloat()
+            strokeWidth = dp(2).toFloat()
             style = android.graphics.Paint.Style.STROKE
         }
 
