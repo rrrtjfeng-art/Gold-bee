@@ -43,6 +43,7 @@ class Mt5ScreenCaptureService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var lastOcrAt = 0L
+    private var lastNotifiedFingerprint: String? = null
     private var resourcesReleased = false
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -237,6 +238,40 @@ class Mt5ScreenCaptureService : Service() {
                 else "已读取屏幕文字，但未能完整识别信号价位；缺少价位时禁止跟随。"
             )
             .apply()
+
+        // A quiet, deduplicated notification lets the user know when the screen contains
+        // all explicitly labelled signal fields while MT5 is in the foreground.
+        // It is a recognition notice only, never a BUY/SELL recommendation.
+        if (observation.hasTradeLevels) {
+            val fingerprint = listOf(
+                observation.symbol.orEmpty(),
+                observation.direction.orEmpty(),
+                observation.entry,
+                observation.stopLoss,
+                observation.takeProfit
+            ).joinToString("|")
+            if (fingerprint != lastNotifiedFingerprint) {
+                lastNotifiedFingerprint = fingerprint
+                val notice = NotificationCompat.Builder(this, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_menu_view)
+                    .setContentTitle("Gold Bee：识别到一组交易字段")
+                    .setContentText(
+                        "${observation.symbol ?: "品种未识别"} ${observation.direction} · Entry ${observation.entry} · SL ${observation.stopLoss} · TP ${observation.takeProfit}"
+                    )
+                    .setStyle(
+                        NotificationCompat.BigTextStyle().bigText(
+                            "识别到方向与 Entry/SL/TP。此结果来自屏幕 OCR，可能误读或过期；请核对 MT5 原画面，不能仅凭通知下单。"
+                        )
+                    )
+                    .setOnlyAlertOnce(true)
+                    .setAutoCancel(true)
+                    .setCategory(NotificationCompat.CATEGORY_STATUS)
+                    .build()
+                getSystemService(NotificationManager::class.java).notify(SIGNAL_NOTIFICATION_ID, notice)
+            }
+        } else {
+            lastNotifiedFingerprint = null
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -268,6 +303,7 @@ class Mt5ScreenCaptureService : Service() {
         const val KEY_OCR_STATUS = "ocr_status"
         private const val CHANNEL_ID = "gold_bee_screen_ocr"
         private const val NOTIFICATION_ID = 7402
-        private const val MIN_OCR_INTERVAL_MS = 1200L
+        private const val SIGNAL_NOTIFICATION_ID = 7403
+        private const val MIN_OCR_INTERVAL_MS = 800L
     }
 }
