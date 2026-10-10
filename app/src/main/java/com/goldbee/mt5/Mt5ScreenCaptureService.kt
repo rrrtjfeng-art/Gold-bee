@@ -27,6 +27,7 @@ import androidx.core.app.NotificationCompat
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
+import com.goldbee.paper.PaperTradeMonitor
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -238,6 +239,7 @@ class Mt5ScreenCaptureService : Service() {
                 else "已读取屏幕文字，但未能完整识别信号价位；缺少价位时禁止跟随。"
             )
             .apply()
+        PaperTradeMonitor.checkAndUpdate(this)
 
         // A quiet, deduplicated notification lets the user know when the screen contains
         // all explicitly labelled signal fields while MT5 is in the foreground.
