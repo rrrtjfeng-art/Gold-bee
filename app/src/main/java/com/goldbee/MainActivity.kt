@@ -2573,7 +2573,9 @@ class MainActivity : AppCompatActivity() {
                 )
                 fun describe(label: String, stats: com.goldbee.analysis.BacktestResult): String {
                     val pf = stats.profitFactor?.let { fmt(it) } ?: "—"
-                    return "$label：交易 ${stats.trades.size} 笔 · 胜率 ${fmt(stats.winRatePercent)}% · 净期望 ${fmt(stats.expectancyR)}R/笔 · 累计 ${fmt(stats.totalR)}R · PF $pf · 最大回撤 ${fmt(stats.maxDrawdownR)}R"
+                    val days = stats.sampleDurationDays
+                    val frequency = if (days > 0.0) stats.trades.size / days else 0.0
+                    return "$label：交易 ${stats.trades.size} 笔 · 胜率 ${fmt(stats.winRatePercent)}% · 平均每天 ${fmt(frequency)} 笔 · 净期望 ${fmt(stats.expectancyR)}R/笔 · 累计 ${fmt(stats.totalR)}R · PF $pf · 最大回撤 ${fmt(stats.maxDrawdownR)}R · 最大连亏 ${maxConsecutiveLosses(stats)} 笔"
                 }
                 val rendered = buildString {
                     appendLine("Gold-bee 参数研究报告（不自动下单）")
@@ -2605,6 +2607,17 @@ class MainActivity : AppCompatActivity() {
                     appendLine("回放限制：使用下一根 M5 开盘模拟进场；同一根 K 线同时触及 SL/TP 时按止损先发生。固定成本不能替代历史 Bid/Ask、动态点差、滑点和执行延迟。")
                 }
                 runOnUiThread {
+                    sessionTrainingChart.setMetrics(
+                        listOf(
+                            SessionChartMetric(
+                                "整体策略",
+                                result.validation.expectancyR,
+                                result.validationDoubleCost.expectancyR,
+                                result.validation.winRatePercent,
+                                result.validation.trades.size
+                            )
+                        )
+                    )
                     backtestText.text = rendered
                     backtestText.setTextColor(if (result.validation.sampleIsTooSmall || result.validation.expectancyR <= 0.0) gold else white)
                 }
@@ -2688,6 +2701,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private fun maxConsecutiveLosses(result: com.goldbee.analysis.BacktestResult): Int {
+        var current = 0
+        var maximum = 0
+        result.trades.sortedBy { it.exitTimeSeconds }.forEach { trade ->
+            if (trade.rMultiple < 0.0) {
+                current++
+                maximum = maxOf(maximum, current)
+            } else if (trade.rMultiple > 0.0) {
+                current = 0
+            }
+        }
+        return maximum
+    }
 
     private data class SessionChartMetric(
         val label: String, val validationExpectancy: Double, val doubleCostExpectancy: Double,
