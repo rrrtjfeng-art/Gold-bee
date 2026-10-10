@@ -17,6 +17,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.StrategyBacktester
@@ -477,6 +479,24 @@ class MainActivity : AppCompatActivity() {
         }
         shell.addView(bottomNav, LinearLayout.LayoutParams(-1, -2))
         setContentView(shell)
+
+        // Keep the bottom tabs clear of Android's system navigation bar.
+        // When the keyboard opens, hide the app tabs so they cannot overlap
+        // the keyboard's Enter/Back controls or cover the focused input.
+        ViewCompat.setOnApplyWindowInsetsListener(shell) { view, insets ->
+            val keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            bottomNav.visibility = if (keyboardVisible) android.view.View.GONE else android.view.View.VISIBLE
+            val navigationBottom = if (keyboardVisible) 0
+                else insets.getInsets(WindowInsetsCompat.Type.navigationBars()).bottom
+            view.setPadding(
+                view.paddingLeft,
+                view.paddingTop,
+                view.paddingRight,
+                navigationBottom
+            )
+            insets
+        }
+        ViewCompat.requestApplyInsets(shell)
 
         addLabel(root, "GOLD BEE", 24f, gold, true)
         addLabel(root, "XAUUSD  ·  TRADING TERMINAL", 10f, muted)
