@@ -3,7 +3,6 @@ package com.goldbee.analysis
 import com.goldbee.market.Candle
 import com.goldbee.market.Timeframe
 import java.time.Instant
-import java.time.LocalDate
 import java.time.ZoneId
 import kotlin.math.max
 
