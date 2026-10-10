@@ -1,6 +1,6 @@
 //@version=6
 strategy(
-     "Gold Bee — Confirmed XAUUSD Signal Lab",
+     "Gold Bee — XAUUSD M5 Scalp (Research)",
      overlay = true,
      initial_capital = 1000,
      pyramiding = 0,
@@ -10,103 +10,142 @@ strategy(
      slippage = 2
 )
 
-// Gold Bee research baseline. Signals are confirmed only at candle close.
-// This script cannot guarantee future direction or reproduce a broker's exact spread/fills.
-// Test on the exact broker symbol and timeframe before relying on any result.
+// Gold Bee's intended user experience: only BUY / SELL / WAIT plus exact plan prices.
+// This is a research strategy, not a guarantee. TradingView chart prices and simulated
+// fills can differ from the user's MT5 broker, spread, commissions and execution.
 
 fastLen = input.int(9, "Fast EMA", minval = 2)
 slowLen = input.int(21, "Slow EMA", minval = 3)
-trendLen = input.int(50, "Trend EMA", minval = 10)
-majorTrendLen = input.int(200, "Major trend EMA", minval = 50)
+trendLen = input.int(50, "M5 trend EMA", minval = 10)
+majorTrendLen = input.int(200, "M5 major EMA", minval = 50)
 rsiLen = input.int(14, "RSI length", minval = 2)
-adxLen = input.int(14, "DI length", minval = 2)
+diLen = input.int(14, "DI length", minval = 2)
 adxSmooth = input.int(14, "ADX smoothing", minval = 2)
 minimumAdx = input.float(18.0, "Minimum ADX", minval = 5, step = 0.5)
 atrLen = input.int(14, "ATR length", minval = 2)
-stopAtr = input.float(1.5, "Stop distance × ATR", minval = 0.5, step = 0.1)
-rewardRisk = input.float(1.5, "Take-profit R:R", minval = 1.0, step = 0.1)
-allowLong = input.bool(true, "Enable BUY signals")
-allowShort = input.bool(true, "Enable SELL signals")
+targetMove = input.float(2.00, "Take profit price move ($ for XAUUSD)", minval = 0.10, step = 0.10)
+stopMove = input.float(1.50, "Stop loss price move ($ for XAUUSD)", minval = 0.10, step = 0.10)
+minimumRR = input.float(1.20, "Minimum reward/risk", minval = 1.0, step = 0.1)
+minAtr = input.float(0.35, "Minimum M5 ATR to trade", minval = 0.05, step = 0.05)
+maxAtr = input.float(4.00, "Maximum M5 ATR to trade", minval = 0.25, step = 0.25)
+cooldownBars = input.int(3, "Bars to wait after a signal", minval = 0, maxval = 50)
+maxTradesPerDay = input.int(6, "Maximum new trades per day", minval = 1, maxval = 30)
+allowLong = input.bool(true, "Enable BUY")
+allowShort = input.bool(true, "Enable SELL")
 
 emaFast = ta.ema(close, fastLen)
 emaSlow = ta.ema(close, slowLen)
 emaTrend = ta.ema(close, trendLen)
 emaMajor = ta.ema(close, majorTrendLen)
 rsiValue = ta.rsi(close, rsiLen)
-[plusDI, minusDI, adxValue] = ta.dmi(adxLen, adxSmooth)
+[plusDI, minusDI, adxValue] = ta.dmi(diLen, adxSmooth)
 atrValue = ta.atr(atrLen)
 
-enoughData = not na(emaMajor) and not na(adxValue) and not na(atrValue) and atrValue > syminfo.mintick
-trendUp = close > emaTrend and emaTrend > emaMajor
-trendDown = close < emaTrend and emaTrend < emaMajor
+// Use only the previous, fully closed 15-minute candle to reduce higher-timeframe repainting.
+htfClose = request.security(syminfo.tickerid, "15", close[1], lookahead = barmerge.lookahead_on)
+htfEma = request.security(syminfo.tickerid, "15", ta.ema(close, 50)[1], lookahead = barmerge.lookahead_on)
+htfEmaPrevious = request.security(syminfo.tickerid, "15", ta.ema(close, 50)[2], lookahead = barmerge.lookahead_on)
+htfBull = htfClose > htfEma and htfEma > htfEmaPrevious
+htfBear = htfClose < htfEma and htfEma < htfEmaPrevious
+
+isM5 = timeframe.isminutes and timeframe.multiplier == 5
+enoughData = not na(emaMajor) and not na(adxValue) and not na(atrValue) and not na(htfEmaPrevious)
+validVolatility = atrValue >= minAtr and atrValue <= maxAtr
+validRewardRisk = stopMove > 0 and targetMove / stopMove >= minimumRR
+trendUp = close > emaTrend and emaTrend > emaMajor and htfBull
+trendDown = close < emaTrend and emaTrend < emaMajor and htfBear
 momentumUp = rsiValue >= 52 and plusDI > minusDI
 momentumDown = rsiValue <= 48 and minusDI > plusDI
 marketMoving = adxValue >= minimumAdx
 crossUp = ta.crossover(emaFast, emaSlow)
 crossDown = ta.crossunder(emaFast, emaSlow)
 
-buySignal = barstate.isconfirmed and enoughData and allowLong and trendUp and momentumUp and marketMoving and crossUp
-sellSignal = barstate.isconfirmed and enoughData and allowShort and trendDown and momentumDown and marketMoving and crossDown
+var int tradesToday = 0
+var int lastSignalBar = na
+var int dayKey = na
+currentDayKey = year * 10000 + month * 100 + dayofmonth
+if na(dayKey) or currentDayKey != dayKey
+    dayKey := currentDayKey
+    tradesToday := 0
+
+cooldownPassed = na(lastSignalBar) or bar_index - lastSignalBar > cooldownBars
+dailyLimitPassed = tradesToday < maxTradesPerDay
+canSignal = barstate.isconfirmed and isM5 and enoughData and validVolatility and validRewardRisk and marketMoving and cooldownPassed and dailyLimitPassed
+
+buySignal = canSignal and allowLong and trendUp and momentumUp and crossUp
+sellSignal = canSignal and allowShort and trendDown and momentumDown and crossDown
 
 var float plannedEntry = na
 var float plannedSL = na
 var float plannedTP = na
 var string lastDecision = "WAIT"
-var int lastSignalBar = na
+var int lastSignalBarShown = na
 
 if buySignal and strategy.position_size <= 0
     plannedEntry := close
-    plannedSL := close - atrValue * stopAtr
-    plannedTP := close + atrValue * stopAtr * rewardRisk
+    plannedSL := close - stopMove
+    plannedTP := close + targetMove
     lastDecision := "BUY"
     lastSignalBar := bar_index
-    strategy.entry("BUY", strategy.long, alert_message = "GOLD BEE BUY | {{ticker}} | {{interval}} | confirmed candle close")
-    strategy.exit("BUY exit", from_entry = "BUY", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE BUY EXIT | {{ticker}} | {{interval}}")
+    lastSignalBarShown := bar_index
+    tradesToday += 1
+    strategy.entry("BUY", strategy.long, alert_message = "GOLD BEE BUY filled | {{ticker}} | {{interval}}")
+    strategy.exit("BUY exit", from_entry = "BUY", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE BUY exit | {{ticker}} | {{interval}}")
+    alert("GOLD BEE | BUY | " + syminfo.ticker + " | TF=M5 | Entry ref=" + str.tostring(plannedEntry, format.mintick) + " | SL=" + str.tostring(plannedSL, format.mintick) + " | TP=" + str.tostring(plannedTP, format.mintick) + " | RR=" + str.tostring(targetMove / stopMove, "#.##") + " | Confirmed candle close; verify broker quote/spread.", alert.freq_once_per_bar_close)
 
 if sellSignal and strategy.position_size >= 0
     plannedEntry := close
-    plannedSL := close + atrValue * stopAtr
-    plannedTP := close - atrValue * stopAtr * rewardRisk
+    plannedSL := close + stopMove
+    plannedTP := close - targetMove
     lastDecision := "SELL"
     lastSignalBar := bar_index
-    strategy.entry("SELL", strategy.short, alert_message = "GOLD BEE SELL | {{ticker}} | {{interval}} | confirmed candle close")
-    strategy.exit("SELL exit", from_entry = "SELL", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE SELL EXIT | {{ticker}} | {{interval}}")
+    lastSignalBarShown := bar_index
+    tradesToday += 1
+    strategy.entry("SELL", strategy.short, alert_message = "GOLD BEE SELL filled | {{ticker}} | {{interval}}")
+    strategy.exit("SELL exit", from_entry = "SELL", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE SELL exit | {{ticker}} | {{interval}}")
+    alert("GOLD BEE | SELL | " + syminfo.ticker + " | TF=M5 | Entry ref=" + str.tostring(plannedEntry, format.mintick) + " | SL=" + str.tostring(plannedSL, format.mintick) + " | TP=" + str.tostring(plannedTP, format.mintick) + " | RR=" + str.tostring(targetMove / stopMove, "#.##") + " | Confirmed candle close; verify broker quote/spread.", alert.freq_once_per_bar_close)
 
-// Keep exits updated only from the levels calculated at entry.
+// Keep exit prices fixed at the signal's initial plan.
 if strategy.position_size > 0
-    strategy.exit("BUY exit", from_entry = "BUY", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE BUY EXIT | {{ticker}} | {{interval}}")
+    strategy.exit("BUY exit", from_entry = "BUY", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE BUY exit | {{ticker}} | {{interval}}")
 if strategy.position_size < 0
-    strategy.exit("SELL exit", from_entry = "SELL", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE SELL EXIT | {{ticker}} | {{interval}}")
+    strategy.exit("SELL exit", from_entry = "SELL", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE SELL exit | {{ticker}} | {{interval}}")
+
+recentSignal = not na(lastSignalBarShown) and bar_index - lastSignalBarShown <= 2
+activeLong = strategy.position_size > 0
+activeShort = strategy.position_size < 0
+showPlan = activeLong or activeShort or recentSignal
+panelDecision = not isM5 ? "USE M5 CHART" : activeLong ? "BUY ACTIVE" : activeShort ? "SELL ACTIVE" : recentSignal ? lastDecision : "WAIT / NO TRADE"
+panelColor = activeLong or (recentSignal and lastDecision == "BUY") ? color.lime : activeShort or (recentSignal and lastDecision == "SELL") ? color.red : color.gray
 
 plot(emaFast, "EMA Fast", color = color.aqua)
 plot(emaSlow, "EMA Slow", color = color.orange)
-plot(emaTrend, "EMA Trend", color = color.blue, linewidth = 2)
-plot(emaMajor, "EMA Major Trend", color = color.purple, linewidth = 2)
-plot(strategy.position_size != 0 ? plannedEntry : na, "Planned Entry", color = color.white, linewidth = 2, style = plot.style_linebr)
-plot(strategy.position_size != 0 ? plannedSL : na, "Stop Loss", color = color.red, linewidth = 2, style = plot.style_linebr)
-plot(strategy.position_size != 0 ? plannedTP : na, "Take Profit", color = color.lime, linewidth = 2, style = plot.style_linebr)
-
+plot(emaTrend, "M5 Trend", color = color.blue, linewidth = 2)
+plot(emaMajor, "M5 Major Trend", color = color.purple, linewidth = 2)
+plot(showPlan ? plannedEntry : na, "Entry reference", color = color.white, linewidth = 2, style = plot.style_linebr)
+plot(showPlan ? plannedSL : na, "Stop loss", color = color.red, linewidth = 2, style = plot.style_linebr)
+plot(showPlan ? plannedTP : na, "Take profit", color = color.lime, linewidth = 2, style = plot.style_linebr)
 plotshape(buySignal, title = "Confirmed BUY", text = "BUY", style = shape.labelup, location = location.belowbar, color = color.lime, textcolor = color.black, size = size.small)
 plotshape(sellSignal, title = "Confirmed SELL", text = "SELL", style = shape.labeldown, location = location.abovebar, color = color.red, textcolor = color.white, size = size.small)
 
-var table panel = table.new(position.top_right, 2, 7, border_width = 1)
+var table panel = table.new(position.top_right, 2, 8, border_width = 1)
 if barstate.islast
-    string decision = strategy.position_size > 0 ? "BUY ACTIVE" : strategy.position_size < 0 ? "SELL ACTIVE" : "WAIT / NO TRADE"
-    color decisionColor = strategy.position_size > 0 ? color.lime : strategy.position_size < 0 ? color.red : color.gray
     table.cell(panel, 0, 0, "GOLD BEE", text_color = color.white, bgcolor = color.rgb(35, 43, 55))
-    table.cell(panel, 1, 0, decision, text_color = color.white, bgcolor = decisionColor)
-    table.cell(panel, 0, 1, "Trend")
-    table.cell(panel, 1, 1, trendUp ? "UP" : trendDown ? "DOWN" : "MIXED")
-    table.cell(panel, 0, 2, "RSI")
-    table.cell(panel, 1, 2, str.tostring(rsiValue, "#.0"))
-    table.cell(panel, 0, 3, "ADX")
-    table.cell(panel, 1, 3, str.tostring(adxValue, "#.0"))
-    table.cell(panel, 0, 4, "Entry")
-    table.cell(panel, 1, 4, strategy.position_size != 0 ? str.tostring(plannedEntry, format.mintick) : "—")
-    table.cell(panel, 0, 5, "Stop Loss")
-    table.cell(panel, 1, 5, strategy.position_size != 0 ? str.tostring(plannedSL, format.mintick) : "—")
-    table.cell(panel, 0, 6, "Take Profit")
-    table.cell(panel, 1, 6, strategy.position_size != 0 ? str.tostring(plannedTP, format.mintick) : "—")
+    table.cell(panel, 1, 0, panelDecision, text_color = color.white, bgcolor = panelColor)
+    table.cell(panel, 0, 1, "15m trend")
+    table.cell(panel, 1, 1, htfBull ? "UP" : htfBear ? "DOWN" : "MIXED")
+    table.cell(panel, 0, 2, "Market strength")
+    table.cell(panel, 1, 2, str.tostring(adxValue, "#.0"))
+    table.cell(panel, 0, 3, "Daily trades")
+    table.cell(panel, 1, 3, str.tostring(tradesToday) + " / " + str.tostring(maxTradesPerDay))
+    table.cell(panel, 0, 4, "Entry reference")
+    table.cell(panel, 1, 4, showPlan ? str.tostring(plannedEntry, format.mintick) : "—")
+    table.cell(panel, 0, 5, "Stop loss")
+    table.cell(panel, 1, 5, showPlan ? str.tostring(plannedSL, format.mintick) : "—")
+    table.cell(panel, 0, 6, "Take profit")
+    table.cell(panel, 1, 6, showPlan ? str.tostring(plannedTP, format.mintick) : "—")
+    table.cell(panel, 0, 7, "Target / risk")
+    table.cell(panel, 1, 7, str.tostring(targetMove, "#.##") + " / " + str.tostring(stopMove, "#.##") + " (" + str.tostring(targetMove / stopMove, "#.##") + "R)")
 
-alertcondition(buySignal, title = "Gold Bee confirmed BUY", message = "Gold Bee BUY signal confirmed at candle close: {{ticker}} {{interval}} close={{close}}")
-alertcondition(sellSignal, title = "Gold Bee confirmed SELL", message = "Gold Bee SELL signal confirmed at candle close: {{ticker}} {{interval}} close={{close}}")
+// For TradingView alerts, choose "Any alert() function call" to receive dynamic entry/SL/TP prices.
+// Alertcondition() is intentionally avoided: alert() carries the full trade plan in one message.
