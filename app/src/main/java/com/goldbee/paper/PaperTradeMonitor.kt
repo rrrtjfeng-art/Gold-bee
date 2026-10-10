@@ -92,7 +92,7 @@ object PaperTradeMonitor {
             .putInt("paper_wins", wins)
             .putInt("paper_losses", losses)
             .putInt("paper_flats", flats)
-            .putFloat("paper_total_pnl_price", total.toFloat())
+            .putFloat("paper_total_pnl_usd", total.toFloat())
             .apply()
     }
 
