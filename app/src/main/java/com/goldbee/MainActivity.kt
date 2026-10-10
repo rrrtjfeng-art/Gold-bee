@@ -2508,7 +2508,9 @@ class MainActivity : AppCompatActivity() {
                     sessions.forEach { s ->
                         val pf = s.profitFactor?.let { fmt(it) } ?: "—"
                         appendLine("${s.session.label}（${s.session.startHourMy.toString().padStart(2, '0')}:00–${s.session.endHourMy.toString().padStart(2, '0')}:00）")
-                        appendLine("有数据日：${s.calendarDays} · 交易：${s.trades} · 胜率：${fmt(s.winRatePercent)}%")
+                        appendLine("有数据日：${s.calendarDays} · 交易：${s.trades} · 平均每天：${fmt(s.averageTradesPerDataDay)} 笔 · 胜率：${fmt(s.winRatePercent)}%")
+                        appendLine("最大连续亏损笔数：${s.maxConsecutiveLosses}")
+                        appendLine("净期望：${fmt(s.expectancyR)}R/笔 · 累计：${fmt(s.totalR)}R · PF：$pf · 最大回撤：${fmt(s.maxDrawdownR)}R")
                         appendLine("净期望：${fmt(s.expectancyR)}R/笔 · 累计：${fmt(s.totalR)}R · PF：$pf · 最大回撤：${fmt(s.maxDrawdownR)}R")
                         if (s.needsMoreData) {
                             appendLine("判断：样本不足（少于 30 笔或覆盖不足 7 个有数据日），不能据此判断时段优势。")
