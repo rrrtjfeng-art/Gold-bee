@@ -75,7 +75,8 @@ class RiskManagerTest {
         val largeStopSetup = validBuySetup.copy(
             entry = 1.0e200,
             stopLoss = 1.0,
-            takeProfit = 1.0e200 + 1.0e190
+            takeProfit = 1.0e200 + 1.0e190,
+            riskReward = 1.0e-10
         )
         assertNull(
             RiskManager.calculate(
