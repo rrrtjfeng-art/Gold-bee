@@ -22,7 +22,7 @@ data class Mt5ScreenObservation(
 object Mt5ScreenObservationParser {
     private val symbolRegex = Regex("(?i)(?<![A-Z0-9])(XAUUSD|XAU/USD|GOLD)(?![A-Z0-9])")
     private val timeframeRegex = Regex("(?i)(?<![A-Z0-9])(M1|M5|M15|M30|H1|H4|D1|W1|MN1?)(?![A-Z0-9])")
-    private val number = """([0-9]{3,5}(?:\.[0-9]{1,3})?)"""
+    private val number = """(?<![0-9])([0-9]{3,5}(?:\.[0-9]{1,3})?)(?![0-9])"""
     private val entryRegex = Regex("(?i)(?:ENTRY|ENT|OPEN PRICE|入场价|进场价|入场|进场)\\s*[:：=@-]?\\s*$number")
     private val slRegex = Regex("(?i)(?:STOP\\s*LOSS|STOPLOSS|S\\.?L\\.?|止损)\\s*[:：=@-]?\\s*$number")
     private val tpRegex = Regex("(?i)(?:TAKE\\s*PROFIT|TAKEPROFIT|T\\.?P\\.?[0-9]*|止盈)\\s*[:：=@-]?\\s*$number")
