@@ -903,7 +903,7 @@ class MainActivity : AppCompatActivity() {
             }
             String.format(
                 Locale.US,
-                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分置信度：%.0f%%\n原因：%s\n\n备选 TP（按 SL 风险距离计算）：\n%s\nPips 暂按 1 pip = 0.01 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
+                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分置信度：%.0f%%\n原因：%s\n\n备选 TP（按 SL 风险距离计算）：\n%s\nPips 暂按 1 pip = 0.1 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
                 decision.reason,
                 setup.entry,
                 setup.stopLoss,
