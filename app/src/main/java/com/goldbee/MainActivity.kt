@@ -1351,7 +1351,7 @@ class MainActivity : AppCompatActivity() {
                 for (timeframe in timeframes) {
                     // M5 needs enough depth to cover more than a few trading days.
                     // M15/H1 retain 500 bars to limit request size and startup time.
-                    val requestedBars = when (timeframe) { Timeframe.M5 -> 2500; Timeframe.M15 -> 1000; Timeframe.H1 -> 500 }
+                    val requestedBars = when (timeframe) { Timeframe.M1 -> 500; Timeframe.M5 -> 2500; Timeframe.M15 -> 1000; Timeframe.H1 -> 500 }
                     val result = provider.getHistoricalCandles(timeframe, requestedBars)
                     if (result.isFailure) throw result.exceptionOrNull()
                         ?: IllegalStateException("历史数据请求失败")
