@@ -531,6 +531,32 @@ class MainActivity : AppCompatActivity() {
         addLabel(homeCard, "XAUUSD · 黄金兑美元 · 先看信号，再看价格计划", 12f, muted)
         homeDecisionText = addLabel(homeCard, "WAIT", 34f, gold, true)
         homeHintText = addLabel(homeCard, "尚未分析。下面的 BUY / SELL 不是保证盈利的指令；先完成行情数据设置，再分析。", 13f, white)
+        val guideToggle = addButton(homeCard, "新手说明：点这里看懂信号、K 线和盈亏", false) { }
+        val beginnerGuide = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(13,  20, 30))
+            visibility = android.view.View.GONE
+        }
+        addLabel(beginnerGuide, "① 先看大字信号", 13f, gold, true)
+        addLabel(beginnerGuide, "BUY＝系统条件偏向买入；SELL＝系统条件偏向卖出。WAIT＝暂时没有足够条件，先等；NO TRADE＝报价、数据或风险检查没通过，不要硬做。信号不是命令，也不保证赚钱。", 12f, white)
+        addLabel(beginnerGuide, "② 再看 K 线图", 13f, gold, true)
+        addLabel(beginnerGuide, "选「5分」时，每根蜡烛代表 5 分钟；「15分」代表 15 分钟；「1小时」代表 1 小时。绿色蜡烛＝这段时间收盘价高于开盘价；红色＝收盘价低于开盘价。蜡烛上下细线表示这段时间到过的最高价和最低价。黄色 EMA9 线是最近价格的平滑参考，不是未来预测。", 12f, white)
+        addLabel(beginnerGuide, "③ Entry / SL / TP 是什么？", 13f, gold, true)
+        addLabel(beginnerGuide, "Entry＝计划进场价；SL（止损）＝价格走错时计划退出的位置，可能实现亏损；TP（止盈）＝目标退出价。BUY 通常把 SL 放在进场价下方、TP 放上方；SELL 则相反。图上没有这些线，通常代表当前还没有有效计划。", 12f, white)
+        addLabel(beginnerGuide, "④ 盈亏比怎么看？", 13f, gold, true)
+        addLabel(beginnerGuide, "例子只用于教学，不是交易信号：假设 BUY Entry=4110、SL=4108、TP=4114。价格风险距离是 2，目标距离是 4，所以计划盈亏比是 1:2——目标价格距离是风险距离的 2 倍。它不代表胜率，也不代表你一定赚到 4 美元。", 12f, white)
+        addLabel(beginnerGuide, "⑤ 黄金价格变动 ≠ 账户盈亏", 13f, gold, true)
+        addLabel(beginnerGuide, "你实际赚亏多少，还取决于手数、经纪商合约规格、点差、佣金和滑点。不同账户的 XAUUSD 合约规格可能不同，所以不能只看价格移动了多少就猜账户赚了多少。先用模拟账户确认数字，再考虑实盘。", 12f, white)
+        addLabel(beginnerGuide, "⑥ 新手操作顺序", 13f, gold, true)
+        addLabel(beginnerGuide, "先加载历史 K 线 → 确认 MT5 上显示的是 XAUUSD 且 Bid/Ask 报价新鲜 → 点「分析当前报价」→ 阅读系统给出的理由和 Entry/SL/TP → 检查模拟手数及预计亏损 → 你确认后才开本地模拟单。历史图或延迟报价不能当作实时进场依据。", 12f, white)
+        homeCard.addView(beginnerGuide, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        guideToggle.setOnClickListener {
+            val open = beginnerGuide.visibility != android.view.View.VISIBLE
+            beginnerGuide.visibility = if (open) android.view.View.VISIBLE else android.view.View.GONE
+            guideToggle.text = if (open) "收起新手说明" else "新手说明：点这里看懂信号、K 线和盈亏"
+            guideToggle.setTextColor(if (open) gold else white)
+        }
         val chartToolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
@@ -583,32 +609,6 @@ class MainActivity : AppCompatActivity() {
         addButton(homeActions, "分析当前报价", true) { analyzeRealFromMt5Screen() }
         addButton(homeActions, "刷新模拟账户") { refreshPaperTradeStatus() }
         homeCard.addView(homeActions)
-        val guideToggle = addButton(homeCard, "新手说明：点这里看懂信号、K 线和盈亏", false) { }
-        val beginnerGuide = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-            setBackgroundColor(Color.rgb(13,  20, 30))
-            visibility = android.view.View.GONE
-        }
-        addLabel(beginnerGuide, "① 先看大字信号", 13f, gold, true)
-        addLabel(beginnerGuide, "BUY＝系统条件偏向买入；SELL＝系统条件偏向卖出。WAIT＝暂时没有足够条件，先等；NO TRADE＝报价、数据或风险检查没通过，不要硬做。信号不是命令，也不保证赚钱。", 12f, white)
-        addLabel(beginnerGuide, "② 再看 K 线图", 13f, gold, true)
-        addLabel(beginnerGuide, "选「5分」时，每根蜡烛代表 5 分钟；「15分」代表 15 分钟；「1小时」代表 1 小时。绿色蜡烛＝这段时间收盘价高于开盘价；红色＝收盘价低于开盘价。蜡烛上下细线表示这段时间到过的最高价和最低价。黄色 EMA9 线是最近价格的平滑参考，不是未来预测。", 12f, white)
-        addLabel(beginnerGuide, "③ Entry / SL / TP 是什么？", 13f, gold, true)
-        addLabel(beginnerGuide, "Entry＝计划进场价；SL（止损）＝价格走错时计划退出的位置，可能实现亏损；TP（止盈）＝目标退出价。BUY 通常把 SL 放在进场价下方、TP 放上方；SELL 则相反。图上没有这些线，通常代表当前还没有有效计划。", 12f, white)
-        addLabel(beginnerGuide, "④ 盈亏比怎么看？", 13f, gold, true)
-        addLabel(beginnerGuide, "例子只用于教学，不是交易信号：假设 BUY Entry=4110、SL=4108、TP=4114。价格风险距离是 2，目标距离是 4，所以计划盈亏比是 1:2——目标价格距离是风险距离的 2 倍。它不代表胜率，也不代表你一定赚到 4 美元。", 12f, white)
-        addLabel(beginnerGuide, "⑤ 黄金价格变动 ≠ 账户盈亏", 13f, gold, true)
-        addLabel(beginnerGuide, "你实际赚亏多少，还取决于手数、经纪商合约规格、点差、佣金和滑点。不同账户的 XAUUSD 合约规格可能不同，所以不能只看价格移动了多少就猜账户赚了多少。先用模拟账户确认数字，再考虑实盘。", 12f, white)
-        addLabel(beginnerGuide, "⑥ 新手操作顺序", 13f, gold, true)
-        addLabel(beginnerGuide, "先加载历史 K 线 → 确认 MT5 上显示的是 XAUUSD 且 Bid/Ask 报价新鲜 → 点「分析当前报价」→ 阅读系统给出的理由和 Entry/SL/TP → 检查模拟手数及预计亏损 → 你确认后才开本地模拟单。历史图或延迟报价不能当作实时进场依据。", 12f, white)
-        homeCard.addView(beginnerGuide, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
-        guideToggle.setOnClickListener {
-            val open = beginnerGuide.visibility != android.view.View.VISIBLE
-            beginnerGuide.visibility = if (open) android.view.View.VISIBLE else android.view.View.GONE
-            guideToggle.text = if (open) "收起新手说明" else "新手说明：点这里看懂信号、K 线和盈亏"
-            guideToggle.setTextColor(if (open) gold else white)
-        }
         marketPage.addView(homeCard)
 
         val settings = makeCard()
