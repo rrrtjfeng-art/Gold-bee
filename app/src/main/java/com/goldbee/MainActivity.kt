@@ -879,25 +879,33 @@ class MainActivity : AppCompatActivity() {
         addLabel(decision, "模拟账户设置（只影响本地模拟计算）", 14f, white, true)
         addLabel(
             decision,
-            "手数决定价格波动对盈亏的影响；合约大小决定 1 手代表多少盎司；杠杆影响理论保证金，不会降低交易本身的亏损。默认按每手 100 盎司估算，请核对你的 MT5 品种规格。",
+            "下面输入框里的数字是可修改的默认值。每项上方会一直显示名称，不用猜数字代表什么。这里仅计算模拟盈亏和理论保证金，不会连接你的真实账户。",
             11f,
-            gold
+            muted
         )
+        addLabel(decision, "① 模拟账户起始余额", 12f, white, true)
+        addLabel(decision, "开始模拟时有多少钱。选择 USC 美分账户时，1000 USC = 10 USD；选择 USD 时，1000 = 1000 美元。", 10f, muted)
         paperBalanceInput = makeNumericInput(
             prefs.getString("paper_start_balance", "1000.00").orEmpty(),
             "初始余额（账户单位）"
         )
         decision.addView(paperBalanceInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        addLabel(decision, "② 每次模拟下多少手", 12f, white, true)
+        addLabel(decision, "例如 0.01 手。手数越大，同样的金价波动带来的盈亏越大。", 10f, muted)
         paperLotSizeInput = makeNumericInput(
             prefs.getString("paper_lot_size", "0.01").orEmpty(),
             "模拟手数，例如 0.01"
         )
         decision.addView(paperLotSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        addLabel(decision, "③ 1 手等于多少盎司", 12f, white, true)
+        addLabel(decision, "默认 100 盎司/手只是估算值。请在 MT5 的 XAUUSD → 品种规格中核对；不一致会让模拟盈亏算错。", 10f, muted)
         paperContractSizeInput = makeNumericInput(
             prefs.getString("paper_contract_ounces", "100").orEmpty(),
             "每手合约大小（盎司）"
         )
         decision.addView(paperContractSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        addLabel(decision, "④ 用哪个金价计算示例", 12f, white, true)
+        addLabel(decision, "这是用于估算仓位价值和保证金的参考价格，不是实时行情，也不是建议进场价。", 10f, muted)
         paperGoldPriceInput = makeNumericInput(
             prefs.getString("paper_gold_price_usd", "4000.00").orEmpty(),
             "参考金价 USD/盎司，例如 4000.00"
@@ -919,10 +927,13 @@ class MainActivity : AppCompatActivity() {
             }
         }
         decision.addView(leverageRow)
+        addLabel(decision, "⑥ 选择模拟杠杆", 12f, white, true)
+        addLabel(decision, "杠杆越高，理论保证金通常越低；但同样手数的盈亏不会因此变小。这里的杠杆只用于估算。", 10f, muted)
         paperLeverageText = addLabel(decision, "当前模拟杠杆：1:2000", 12f, white, true)
+        addLabel(decision, "⑤ 看结果：手数换算、金价波动盈亏、保证金", 13f, white, true)
         paperLotValueText = addLabel(
             decision,
-            "例：按每手 100 盎司计算，0.01 手约等于 1 盎司；黄金价格每变化 1.00 美元，理论盈亏约变化 1 美元（未扣点差/佣金）。理论保证金 ≈ 名义价值 ÷ 杠杆；经纪商规则可能不同。",
+            "正在计算……",
             12f,
             gold,
             true
