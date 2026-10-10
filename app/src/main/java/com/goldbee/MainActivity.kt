@@ -147,6 +147,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backtestCostInput: EditText
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
+    private lateinit var homeDecisionText: TextView
+    private lateinit var homePlanText: TextView
+    private lateinit var homeHintText: TextView
     private lateinit var paperTradeText: TextView
     private lateinit var paperTradeHistoryText: TextView
     private lateinit var paperTpStatusText: TextView
@@ -416,6 +419,29 @@ class MainActivity : AppCompatActivity() {
         addLabel(root, "GOLD BEE", 27f, gold, true)
         addLabel(root, "XAUUSD · MARKET ANALYSIS TERMINAL", 11f)
         addLabel(root, "真实行情与历史技术分析测试版", 13f, white)
+
+        // A clear first-screen summary: users should see the decision and plan before advanced settings.
+        val homeCard = makeCard().apply {
+            setPadding(dp(18), dp(18), dp(18), dp(18))
+            setBackgroundColor(Color.rgb(23, 31, 43))
+        }
+        addLabel(homeCard, "交易首页 · 先看这里", 18f, white, true)
+        addLabel(homeCard, "模拟优先 · 你确认后才记录模拟交易 · 不会自动下真实订单", 11f, muted)
+        homeDecisionText = addLabel(homeCard, "WAIT", 34f, gold, true)
+        homeHintText = addLabel(homeCard, "还没有新分析。先加载历史 K 线，再读取 MT5 当前报价。", 13f, white)
+        val homePlan = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(13, 18, 27))
+        }
+        homePlanText = addLabel(homePlan, "进场参考：—\\n止损 SL：—\\n止盈 TP：—\\n风险回报：等待有效信号", 15f, white, true)
+        homeCard.addView(homePlan, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+        val homeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(homeActions, "分析当前报价", true) { analyzeRealFromMt5Screen() }
+        addButton(homeActions, "刷新模拟账户") { refreshPaperTradeStatus() }
+        homeCard.addView(homeActions)
+        addLabel(homeCard, "绿色＝BUY · 红色＝SELL · 黄色＝WAIT / 需要检查。计划价格是参考价；报价过期或错过进场时不要追价。", 11f, muted)
+        root.addView(homeCard)
 
         val settings = makeCard()
         addLabel(settings, "行情连接设置", 17f, white, true)
@@ -1335,6 +1361,39 @@ class MainActivity : AppCompatActivity() {
             updatePendingRealTakeProfit()
         }
         decisionText.text = decision.action.name
+        if (::homeDecisionText.isInitialized) {
+            homeDecisionText.text = when (decision.action) {
+                DecisionAction.BUY -> "BUY · 买入机会"
+                DecisionAction.SELL -> "SELL · 卖出机会"
+                DecisionAction.WAIT -> "WAIT · 等待"
+                DecisionAction.NO_TRADE -> "NO TRADE · 不交易"
+            }
+            homeDecisionText.setTextColor(
+                when (decision.action) {
+                    DecisionAction.BUY -> green
+                    DecisionAction.SELL, DecisionAction.NO_TRADE -> red
+                    else -> gold
+                }
+            )
+            val homeSetup = decision.setup
+            homePlanText.text = if (homeSetup == null) {
+                "进场参考：—\\n止损 SL：—\\n止盈 TP：—\\n风险回报：当前没有可确认的交易计划"
+            } else {
+                String.format(
+                    Locale.US,
+                    "进场参考：%.3f\\n止损 SL：%.3f\\n止盈 TP：%.3f\\n风险回报：1:%.2f",
+                    homeSetup.entry, homeSetup.stopLoss, homeSetup.takeProfit,
+                    kotlin.math.abs(homeSetup.takeProfit - homeSetup.entry) /
+                        kotlin.math.max(kotlin.math.abs(homeSetup.entry - homeSetup.stopLoss), 0.000001)
+                )
+            }
+            homeHintText.text = when (decision.action) {
+                DecisionAction.BUY -> "系统识别到买入条件。先核对 MT5 最新报价、点差和止损距离，再决定是否开模拟单。"
+                DecisionAction.SELL -> "系统识别到卖出条件。先核对 MT5 最新报价、点差和止损距离，再决定是否开模拟单。"
+                DecisionAction.WAIT -> "条件还不完整。等待比追价更好；没有信号不代表你错过了必赚机会。"
+                DecisionAction.NO_TRADE -> "当前数据或风险条件不合格。先解决原因，不要强行开仓。"
+            }
+        }
         decisionText.setTextColor(
             when (decision.action) {
                 DecisionAction.BUY -> green
