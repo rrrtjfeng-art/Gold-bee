@@ -36,7 +36,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class Mt5ScreenCaptureService : Service() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private val processingFrame = AtomicBoolean(false)
-    private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val recognizerDelegate = lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
+    private val recognizer by recognizerDelegate
 
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -234,7 +235,7 @@ class Mt5ScreenCaptureService : Service() {
 
     override fun onDestroy() {
         releaseCaptureResources(stopProjection = true)
-        if (::recognizer.isInitialized) recognizer.close()
+        if (recognizerDelegate.isInitialized()) recognizer.close()
         stopForeground(STOP_FOREGROUND_REMOVE)
         super.onDestroy()
     }
