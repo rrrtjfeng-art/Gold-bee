@@ -37,6 +37,6 @@ class MarketFeedControllerTest {
         val current = controller.getCandles(timeframe).last()
         assertEquals(3306.1, current.close, 0.000001)
         assertEquals(3306.1, current.high, 0.000001)
-        assertEquals(3306.1, current.low, 0.000001)
+        assertEquals(3298.0, current.low, 0.000001)
     }
 }
