@@ -20,6 +20,24 @@ var array<int> resistanceTouches = array.new<int>()
 var array<float> supportPrices = array.new<float>()
 var array<line> supportLines = array.new<line>()
 var array<int> supportTouches = array.new<int>()
+var float previousSwingHigh = na
+var float previousSwingLow = na
+bool higherHighSignal = false
+bool lowerHighSignal = false
+bool higherLowSignal = false
+bool lowerLowSignal = false
+bool resistanceBreakSignal = false
+bool supportBreakSignal = false
+
+if not na(pivotHigh)
+    higherHighSignal := not na(previousSwingHigh) and pivotHigh > previousSwingHigh
+    lowerHighSignal := not na(previousSwingHigh) and pivotHigh < previousSwingHigh
+    previousSwingHigh := pivotHigh
+
+if not na(pivotLow)
+    higherLowSignal := not na(previousSwingLow) and pivotLow > previousSwingLow
+    lowerLowSignal := not na(previousSwingLow) and pivotLow < previousSwingLow
+    previousSwingLow := pivotLow
 
 addOrMergeLevel(array<float> prices, array<line> lines, array<int> touches, float price, float atrValue, color levelColor) =>
     if not na(price)
@@ -74,6 +92,7 @@ if array.size(resistancePrices) > 0
             array.remove(resistancePrices, i)
             array.remove(resistanceLines, i)
             array.remove(resistanceTouches, i)
+            resistanceBreakSignal := true
 
 if array.size(supportPrices) > 0
     for i = array.size(supportPrices) - 1 to 0
@@ -85,6 +104,21 @@ if array.size(supportPrices) > 0
             array.remove(supportPrices, i)
             array.remove(supportLines, i)
             array.remove(supportTouches, i)
+            supportBreakSignal := true
 
 plotshape(showPivotMarkers and not na(pivotHigh), title = "Confirmed Swing High", style = shape.triangledown, location = location.abovebar, color = color.red, size = size.tiny, offset = -rightBars)
 plotshape(showPivotMarkers and not na(pivotLow), title = "Confirmed Swing Low", style = shape.triangleup, location = location.belowbar, color = color.lime, size = size.tiny, offset = -rightBars)
+
+plotshape(higherHighSignal, title = "Higher High (HH)", style = shape.labeldown, location = location.abovebar, color = color.new(color.red, 0), text = "HH", textcolor = color.white, size = size.tiny, offset = -rightBars)
+plotshape(lowerHighSignal, title = "Lower High (LH)", style = shape.labeldown, location = location.abovebar, color = color.new(color.orange, 0), text = "LH", textcolor = color.white, size = size.tiny, offset = -rightBars)
+plotshape(higherLowSignal, title = "Higher Low (HL)", style = shape.labelup, location = location.belowbar, color = color.new(color.lime, 0), text = "HL", textcolor = color.black, size = size.tiny, offset = -rightBars)
+plotshape(lowerLowSignal, title = "Lower Low (LL)", style = shape.labelup, location = location.belowbar, color = color.new(color.aqua, 0), text = "LL", textcolor = color.black, size = size.tiny, offset = -rightBars)
+
+alertcondition(not na(pivotHigh), title = "Confirmed Swing High", message = "Gold Bee: confirmed Swing High on {{ticker}} {{interval}} at {{high}}")
+alertcondition(not na(pivotLow), title = "Confirmed Swing Low", message = "Gold Bee: confirmed Swing Low on {{ticker}} {{interval}} at {{low}}")
+alertcondition(higherHighSignal, title = "Higher High (HH)", message = "Gold Bee: Higher High on {{ticker}} {{interval}}")
+alertcondition(higherLowSignal, title = "Higher Low (HL)", message = "Gold Bee: Higher Low on {{ticker}} {{interval}}")
+alertcondition(lowerHighSignal, title = "Lower High (LH)", message = "Gold Bee: Lower High on {{ticker}} {{interval}}")
+alertcondition(lowerLowSignal, title = "Lower Low (LL)", message = "Gold Bee: Lower Low on {{ticker}} {{interval}}")
+alertcondition(resistanceBreakSignal, title = "Resistance broken", message = "Gold Bee: candle closed above a tracked resistance level on {{ticker}} {{interval}}")
+alertcondition(supportBreakSignal, title = "Support broken", message = "Gold Bee: candle closed below a tracked support level on {{ticker}} {{interval}}")
