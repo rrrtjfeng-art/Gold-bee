@@ -123,6 +123,7 @@ class GoldPriceDevWebSocketClient(
         socket = null
         subscriptionConfirmed = false
         current?.close(1000, "User requested disconnect")
+        reconnectScheduler.shutdownNow()
         listener.onDisconnected(source)
     }
 
