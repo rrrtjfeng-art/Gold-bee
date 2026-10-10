@@ -42,9 +42,11 @@ trendDown = close < emaTrend and emaTrend < emaMajor
 momentumUp = rsiValue >= 52 and plusDI > minusDI
 momentumDown = rsiValue <= 48 and minusDI > plusDI
 marketMoving = adxValue >= minimumAdx
+crossUp = ta.crossover(emaFast, emaSlow)
+crossDown = ta.crossunder(emaFast, emaSlow)
 
-buySignal = barstate.isconfirmed and enoughData and allowLong and trendUp and momentumUp and marketMoving and ta.crossover(emaFast, emaSlow)
-sellSignal = barstate.isconfirmed and enoughData and allowShort and trendDown and momentumDown and marketMoving and ta.crossunder(emaFast, emaSlow)
+buySignal = barstate.isconfirmed and enoughData and allowLong and trendUp and momentumUp and marketMoving and crossUp
+sellSignal = barstate.isconfirmed and enoughData and allowShort and trendDown and momentumDown and marketMoving and crossDown
 
 var float plannedEntry = na
 var float plannedSL = na
