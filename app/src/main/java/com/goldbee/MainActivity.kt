@@ -32,6 +32,7 @@ import com.goldbee.decision.CopySignalParser
 import com.goldbee.decision.DecisionAction
 import com.goldbee.decision.DecisionResult
 import com.goldbee.decision.TradeDecisionGate
+import com.goldbee.decision.PendingOrderPlanner
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
 import com.goldbee.market.GoldPriceDevWebSocketClient
@@ -1696,9 +1697,35 @@ class MainActivity : AppCompatActivity() {
                     if (target.riskReward < 1.0) " · 风险回报不足" else ""
                 )
             }
+            val pendingAlternatives = run {
+                val atrM5 = latestAnalysis?.m5?.indicators?.atr14
+                if (atrM5 == null || !atrM5.isFinite() || atrM5 <= 0.0) {
+                    "M5 ATR 不可用，暂不计算 LIMIT/STOP 候选。"
+                } else {
+                    listOf(false, true).mapNotNull { breakout ->
+                        PendingOrderPlanner.plan(
+                            direction = setup.direction,
+                            currentPrice = setup.entry,
+                            atrM5 = atrM5,
+                            structuralStop = setup.stopLoss,
+                            structuralTarget = setup.takeProfit,
+                            preferBreakout = breakout
+                        )
+                    }.joinToString("\n") { order ->
+                        String.format(
+                            Locale.US,
+                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\\n取消边界 %.3f",
+                            order.type.label, order.entry, order.stopLoss,
+                            order.takeProfit1, order.riskReward1,
+                            order.takeProfit2, order.riskReward2,
+                            order.cancelIfPriceBeyond
+                        )
+                    }.ifBlank { "当前结构空间不足以生成合格条件单；不要强行挂单。" }
+                }
+            }
             String.format(
                 Locale.US,
-                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分（非胜率）：%.0f%%\n注意：该分数不是历史胜率或盈利概率，未经独立回测验证不能代表未来成功概率。\n原因：%s\n\n备选 TP（固定价格距离：小赚 +2 美元、中赚 +5 美元、大赚 +10 美元；每个目标按实际 SL 计算 R:R）：\n%s\nPips 暂按 1 pip = 0.1 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
+                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分（非胜率）：%.0f%%\n注意：该分数不是历史胜率或盈利概率，未经独立回测验证不能代表未来成功概率。\n原因：%s\n\n备选 TP（固定价格距离：小赚 +2 美元、中赚 +5 美元、大赚 +10 美元；每个目标按实际 SL 计算 R:R）：\n%s\nPips 暂按 1 pip = 0.1 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。\n\n条件单候选（仍需独立验证，不是已确认信号）：%s",
                 decision.reason,
                 setup.entry,
                 setup.stopLoss,
@@ -1706,7 +1733,8 @@ class MainActivity : AppCompatActivity() {
                 setup.riskReward,
                 decision.confidence * 100.0,
                 setup.reason,
-                targetOptions
+                targetOptions,
+                pendingAlternatives
             )
         }
     }
