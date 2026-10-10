@@ -165,7 +165,7 @@ object CopyDecisionGate {
             netReward <= 0.0 ||
             netRisk <= 0.0
         ) {
-            return blocked("扣除点差后，复制信号没有有效的净风险收益。")
+            return blocked("按当前可执行报价计算后，复制信号没有有效的风险收益。")
         }
 
         val estimatedNetRiskReward = netReward / netRisk
@@ -174,7 +174,7 @@ object CopyDecisionGate {
             estimatedNetRiskReward < MIN_NET_RISK_REWARD
         ) {
             return blocked(
-                "复制信号扣除点差估算后净盈亏比仅 %.2f，低于最低要求 %.2f，拒绝跟随。"
+                "复制信号按当前可执行报价计算的盈亏比仅 %.2f，低于最低要求 %.2f，拒绝跟随。"
                     .format(estimatedNetRiskReward, MIN_NET_RISK_REWARD)
             )
         }
