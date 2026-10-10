@@ -744,9 +744,9 @@ class MainActivity : AppCompatActivity() {
         latestCandles = candles
         latestAnalysis = analysis
 
-        val risk = kotlin.math.abs(entry - stopLoss)
-        val reward = kotlin.math.abs(takeProfit - entry)
-        if (risk <= 0.0 || reward / risk < 1.0) {
+        val signalRisk = kotlin.math.abs(entry - stopLoss)
+        val signalReward = kotlin.math.abs(takeProfit - entry)
+        if (signalRisk <= 0.0 || signalReward / signalRisk < 1.0) {
             blockCopy("信号的风险回报比低于 1:1；不跟随。")
             return
         }
@@ -779,6 +779,9 @@ class MainActivity : AppCompatActivity() {
             evaluation.priceDistance ?: 0.0,
             evaluation.reason
         )
+        copyResultText.text = copyResultText.text.toString() +
+            "\n报价来源：MT5 屏幕读取（${ageMillis} ms）。历史 K 线来自 Twelve Data。" +
+            "\n此结果只用于人工复核，不会自动下单，也不保证盈利。"
     }
 
     private fun refreshQuoteAndEvaluate(
