@@ -123,8 +123,11 @@ object CopySignalEvaluator {
         // risk/reward must use the current executable quote, not stale signal Entry.
         val stopDistance = abs(currentPrice - stopLoss)
         val targetDistance = abs(takeProfit - currentPrice)
-        val netReward = targetDistance - spread
-        val netRisk = stopDistance + spread
+        // Entry is already the executable side (Ask for BUY, Bid for SELL),
+        // so the spread is embedded in the entry price. Subtracting it again
+        // would double-count spread. Keep the ATR-based spread filter above. 
+        val netReward = targetDistance
+        val netRisk = stopDistance
         if (
             !stopDistance.isFinite() ||
             !targetDistance.isFinite() ||
