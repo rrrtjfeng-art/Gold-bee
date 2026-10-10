@@ -588,7 +588,7 @@ class MainActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             setBackgroundColor(Color.rgb(13,  20, 30))
-            visibility = View.GONE
+            visibility = android.view.View.GONE
         }
         addLabel(beginnerGuide, "① 先看大字信号", 13f, gold, true)
         addLabel(beginnerGuide, "BUY＝系统条件偏向买入；SELL＝系统条件偏向卖出。WAIT＝暂时没有足够条件，先等；NO TRADE＝报价、数据或风险检查没通过，不要硬做。信号不是命令，也不保证赚钱。", 12f, white)
@@ -604,8 +604,8 @@ class MainActivity : AppCompatActivity() {
         addLabel(beginnerGuide, "先加载历史 K 线 → 确认 MT5 上显示的是 XAUUSD 且 Bid/Ask 报价新鲜 → 点「分析当前报价」→ 阅读系统给出的理由和 Entry/SL/TP → 检查模拟手数及预计亏损 → 你确认后才开本地模拟单。历史图或延迟报价不能当作实时进场依据。", 12f, white)
         homeCard.addView(beginnerGuide, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         guideToggle.setOnClickListener {
-            val open = beginnerGuide.visibility != View.VISIBLE
-            beginnerGuide.visibility = if (open) View.VISIBLE else View.GONE
+            val open = beginnerGuide.visibility != android.view.View.VISIBLE
+            beginnerGuide.visibility = if (open) android.view.View.VISIBLE else android.view.View.GONE
             guideToggle.text = if (open) "收起新手说明" else "新手说明：点这里看懂信号、K 线和盈亏"
             guideToggle.setTextColor(if (open) gold else white)
         }
