@@ -23,6 +23,9 @@ class WebSocketReconnectPolicyTest {
         assertFalse(WebSocketReconnectPolicy.shouldRetry(errorCode = "plan_gated"))
         assertFalse(WebSocketReconnectPolicy.shouldRetry(errorCode = "too_many_connections"))
         assertFalse(WebSocketReconnectPolicy.shouldRetry(closeCode = 1000))
+        assertFalse(WebSocketReconnectPolicy.shouldRetry(httpStatusCode = 401))
+        assertFalse(WebSocketReconnectPolicy.shouldRetry(httpStatusCode = 403))
+        assertFalse(WebSocketReconnectPolicy.shouldRetry(httpStatusCode = 429))
     }
 
     @Test
