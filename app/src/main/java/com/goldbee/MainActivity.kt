@@ -1254,16 +1254,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recordPaperClosure(trade: PaperTrade) {
-        val pnl = trade.pnlPrice ?: return
-        val wins = prefs.getInt("paper_wins", 0) + if (pnl > 0.0) 1 else 0
-        val losses = prefs.getInt("paper_losses", 0) + if (pnl < 0.0) 1 else 0
-        val flats = prefs.getInt("paper_flats", 0) + if (pnl == 0.0) 1 else 0
-        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble() + pnl
+        val pnl = trade.pnlUsd ?: return
+        val wins = prefs.getInt("paper_money_wins", 0) + if (pnl > 0.0) 1 else 0
+        val losses = prefs.getInt("paper_money_losses", 0) + if (pnl < 0.0) 1 else 0
+        val flats = prefs.getInt("paper_money_flats", 0) + if (pnl == 0.0) 1 else 0
+        val total = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble() + pnl
         prefs.edit()
-            .putInt("paper_wins", wins)
-            .putInt("paper_losses", losses)
-            .putInt("paper_flats", flats)
-            .putFloat("paper_total_pnl_price", total.toFloat())
+            .putInt("paper_money_wins", wins)
+            .putInt("paper_money_losses", losses)
+            .putInt("paper_money_flats", flats)
+            .putFloat("paper_total_pnl_usd", total.toFloat())
             .apply()
     }
 
@@ -1327,14 +1327,25 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun accountScale(): Double = if (paperAccountCurrency == "USC") 100.0 else 1.0
+
+    private fun accountUnitLabel(): String = if (paperAccountCurrency == "USC") "USC" else "USD"
+
+    private fun fmtAccountMoney(valueInUsd: Double?): String {
+        if (valueInUsd == null || !valueInUsd.isFinite()) return "—"
+        return String.format(Locale.US, "%.2f %s", valueInUsd * accountScale(), accountUnitLabel())
+    }
+
     private fun refreshPaperTradeStatus() {
         if (!::paperTradeText.isInitialized) return
         val trade = loadPaperTrade()
-        val wins = prefs.getInt("paper_wins", 0)
-        val losses = prefs.getInt("paper_losses", 0)
-        val flats = prefs.getInt("paper_flats", 0)
-        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble()
-        val stats = "历史模拟结果：盈利 $wins · 亏损 $losses · 持平 $flats · 累计价格盈亏 ${fmt(total)}（非账户货币）"
+        val wins = prefs.getInt("paper_money_wins", 0)
+        val losses = prefs.getInt("paper_money_losses", 0)
+        val flats = prefs.getInt("paper_money_flats", 0)
+        val totalUsd = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble()
+        val startBalance = prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0
+        val realizedBalance = startBalance + totalUsd * accountScale()
+        val stats = "模拟账户：初始 ${String.format(Locale.US, "%.2f", startBalance)} ${accountUnitLabel()} · 已实现净盈亏 ${fmtAccountMoney(totalUsd)} · 余额 ${String.format(Locale.US, "%.2f", realizedBalance)} ${accountUnitLabel()}\\n净盈利 $wins · 净亏损 $losses · 持平 $flats"
         val monitorStatus = prefs.getString("paper_monitor_status", "尚未开始自动检查").orEmpty()
         val observedPrefs = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
         val quoteAge = System.currentTimeMillis() - observedPrefs.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
@@ -1342,20 +1353,40 @@ class MainActivity : AppCompatActivity() {
         val monitorFresh = quoteSource in setOf("ACCESSIBILITY", "SCREEN_OCR") &&
             quoteAge in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
         val monitorLine = if (monitorFresh) {
-            "自动 SL/TP 监控：报价更新正常。$monitorStatus"
+            "自动 SL/TP 监控：屏幕报价观察正常。$monitorStatus"
         } else {
             "自动 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 并启用只读读取或屏幕 OCR。"
         }
         if (trade?.status == PaperTradeStatus.OPEN) {
-            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n开仓点差：${fmt(trade.entryAsk - trade.entryBid)} · 来源：${trade.source}\n$monitorLine\n$stats"
+            val closeSide = latestPaperCloseSide()
+            val floatingUsd = if (closeSide == null) null else {
+                val move = if (trade.direction == TradeDirection.BUY) closeSide - trade.entryPrice else trade.entryPrice - closeSide
+                move * trade.contractSizeOunces * trade.lotSize -
+                    trade.commissionPerLotRoundTurnUsd * trade.lotSize
+            }
+            val equity = if (floatingUsd == null) realizedBalance else realizedBalance + floatingUsd * accountScale()
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\\n$monitorLine\\n$stats"
             paperTradeText.setTextColor(if (monitorFresh) gold else red)
         } else if (trade?.status == PaperTradeStatus.CLOSED) {
-            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason} · 价格盈亏 ${fmt(trade.pnlPrice)}\n$stats"
-            paperTradeText.setTextColor(if ((trade.pnlPrice ?: 0.0) >= 0.0) green else red)
+            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason}\\n价格变动：${fmt(trade.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(trade.pnlUsd)}\\n$stats"
+            paperTradeText.setTextColor(if ((trade.pnlUsd ?: 0.0) >= 0.0) green else red)
         } else {
-            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\n$stats"
+            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\\n$stats"
             paperTradeText.setTextColor(white)
         }
+    }
+
+    private fun latestPaperCloseSide(): Double? {
+        val observation = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        if (source !in setOf("ACCESSIBILITY", "SCREEN_OCR") ||
+            System.currentTimeMillis() - observedAt !in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
+        ) return null
+        val symbol = observation.getString(Mt5ScreenAccessibilityService.KEY_SYMBOL, "").orEmpty()
+        if (symbol.uppercase().replace("/", "").trim() !in setOf("XAUUSD", "GOLD")) return null
+        val key = if (loadPaperTrade()?.direction == TradeDirection.BUY) Mt5ScreenAccessibilityService.KEY_BID else Mt5ScreenAccessibilityService.KEY_ASK
+        return observation.getString(key, "").orEmpty().toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
     }
 
     private fun refreshRiskStatus() {
