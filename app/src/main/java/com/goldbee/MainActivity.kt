@@ -2857,6 +2857,7 @@ class MainActivity : AppCompatActivity() {
                 Timeframe.M5 -> latestAnalysis?.m5?.indicators?.atr14
                 Timeframe.M15 -> latestAnalysis?.m15?.indicators?.atr14
                 Timeframe.H1 -> latestAnalysis?.h1?.indicators?.atr14
+                Timeframe.M1 -> null
             }
             val structureZones = if (fullSeries.size >= 10) {
                 runCatching {
