@@ -707,6 +707,7 @@ class MainActivity : AppCompatActivity() {
             "参考金价 USD/盎司，例如 4000.00"
         )
         decision.addView(paperGoldPriceInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperLeverage = prefs.getInt("paper_leverage", 2000).takeIf { it in setOf(2000, 3000, 5000, 10000) } ?: 2000
         val leverageRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         listOf(2000, 3000, 5000, 10000).forEach { leverage ->
             addButton(leverageRow, "1:$leverage", paperLeverage == leverage) {
@@ -737,7 +738,6 @@ class MainActivity : AppCompatActivity() {
             }
             override fun afterTextChanged(s: Editable?) = Unit
         }
-        paperLeverage = prefs.getInt("paper_leverage", 2000).takeIf { it in setOf(2000, 3000, 5000, 10000) } ?: 2000
         paperLotSizeInput.addTextChangedListener(lotValueWatcher)
         paperContractSizeInput.addTextChangedListener(lotValueWatcher)
         paperGoldPriceInput.addTextChangedListener(lotValueWatcher)
