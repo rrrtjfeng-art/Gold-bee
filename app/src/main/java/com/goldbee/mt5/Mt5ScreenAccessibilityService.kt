@@ -41,8 +41,17 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             if (item != null) texts += item.toString()
         }
         val observation = Mt5ScreenObservationParser.parse(texts)
-        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
-            .putLong(KEY_OBSERVED_AT, System.currentTimeMillis())
+        val observedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val previousBid = observedPrefs.getString(KEY_BID, "").orEmpty().toDoubleOrNull()
+        val previousAsk = observedPrefs.getString(KEY_ASK, "").orEmpty().toDoubleOrNull()
+        val hasNewQuote = Mt5QuoteFreshness.isNewExecutableQuote(
+            symbol = observation.symbol,
+            bid = observation.bid,
+            ask = observation.ask,
+            previousBid = previousBid,
+            previousAsk = previousAsk
+        )
+        val editor = observedPrefs.edit()
             .putString(KEY_SOURCE, "ACCESSIBILITY")
             .putString(KEY_SYMBOL, observation.symbol.orEmpty())
             .putString(KEY_TIMEFRAME, observation.timeframe.orEmpty())
@@ -53,7 +62,13 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             .putString(KEY_BID, observation.bid?.toString().orEmpty())
             .putString(KEY_ASK, observation.ask?.toString().orEmpty())
             .putInt(KEY_TEXT_COUNT, observation.visibleTextCount)
-            .apply()
+        if (hasNewQuote) {
+            editor.putLong(KEY_OBSERVED_AT, System.currentTimeMillis())
+        } else if (previousBid == null || previousAsk == null) {
+            // No previously valid quote exists: keep the timestamp invalid until a valid quote arrives.
+            editor.putLong(KEY_OBSERVED_AT, 0L)
+        }
+        editor.apply()
         PaperTradeMonitor.checkAndUpdate(this)
     }
 
