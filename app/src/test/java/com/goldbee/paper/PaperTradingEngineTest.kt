@@ -118,7 +118,7 @@ class PaperTradingEngineTest {
     }
 
     @Test
-    fun spreadAdjustedRiskRewardCanRejectSmallTarget() {
+    fun actualEntryRiskRewardCanRejectSmallTarget() {
         val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4099.0, 4101.0, "REAL", now)
         val result = PaperTradingEngine.open(
             signal = signal,
