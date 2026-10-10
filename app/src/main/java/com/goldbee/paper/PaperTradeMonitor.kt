@@ -59,6 +59,7 @@ object PaperTradeMonitor {
 
         if (updated.status == PaperTradeStatus.CLOSED) {
             saveTrade(settings, updated)
+            PaperTradeHistoryStore.append(context, updated)
             recordClosure(settings, updated)
             setStatus(
                 settings,
