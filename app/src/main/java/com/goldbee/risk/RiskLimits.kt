@@ -8,32 +8,21 @@ data class RiskLimits(
 ) {
 
     fun isValid(): Boolean {
-
-        if (
+        if (!maxRiskPercentPerTrade.isFinite() ||
             maxRiskPercentPerTrade <= 0.0 ||
             maxRiskPercentPerTrade > 100.0
-        ) {
-            return false
-        }
+        ) return false
 
-        if (
+        if (!maxDailyLossPercent.isFinite() ||
             maxDailyLossPercent <= 0.0 ||
             maxDailyLossPercent > 100.0
-        ) {
-            return false
-        }
+        ) return false
 
-        if (
-            maxConsecutiveLosses <= 0
-        ) {
-            return false
-        }
+        if (maxConsecutiveLosses <= 0) return false
 
-        if (
+        if (!minimumRiskReward.isFinite() ||
             minimumRiskReward <= 0.0
-        ) {
-            return false
-        }
+        ) return false
 
         return true
     }
@@ -42,7 +31,12 @@ data class RiskLimits(
 data class RiskState(
     val dailyLossPercent: Double = 0.0,
     val consecutiveLosses: Int = 0
-)
+) {
+    fun isValid(): Boolean =
+        dailyLossPercent.isFinite() &&
+            dailyLossPercent >= 0.0 &&
+            consecutiveLosses >= 0
+}
 
 object RiskLimitChecker {
 
@@ -51,31 +45,12 @@ object RiskLimitChecker {
         state: RiskState,
         riskReward: Double
     ): Boolean {
+        if (!limits.isValid() || !state.isValid()) return false
+        if (!riskReward.isFinite() || riskReward <= 0.0) return false
 
-        if (!limits.isValid()) {
-            return false
-        }
-
-        if (
-            state.dailyLossPercent >=
-            limits.maxDailyLossPercent
-        ) {
-            return false
-        }
-
-        if (
-            state.consecutiveLosses >=
-            limits.maxConsecutiveLosses
-        ) {
-            return false
-        }
-
-        if (
-            riskReward <
-            limits.minimumRiskReward
-        ) {
-            return false
-        }
+        if (state.dailyLossPercent >= limits.maxDailyLossPercent) return false
+        if (state.consecutiveLosses >= limits.maxConsecutiveLosses) return false
+        if (riskReward < limits.minimumRiskReward) return false
 
         return true
     }
