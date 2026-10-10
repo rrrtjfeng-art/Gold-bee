@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
+import com.goldbee.analysis.StrategyBacktester
 import com.goldbee.analysis.MultiTimeframeAnalysis
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
@@ -120,6 +121,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var candleText: TextView
     private lateinit var updateText: TextView
     private lateinit var analysisText: TextView
+    private lateinit var backtestText: TextView
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var copySignalInput: EditText
@@ -505,6 +507,13 @@ class MainActivity : AppCompatActivity() {
             white
         )
         addButton(analysis, "加载历史数据并分析", true) { loadHistoricalAnalysis() }
+        addButton(analysis, "回测当前策略") { runStrategyBacktest() }
+        backtestText = addLabel(
+            analysis,
+            "尚未回测。回测会使用已加载的历史 K 线，并明确标出样本量与未计入的交易成本。",
+            12f,
+            muted
+        )
         root.addView(analysis)
 
         val decision = makeCard()
@@ -978,7 +987,7 @@ class MainActivity : AppCompatActivity() {
                 val candleMap = linkedMapOf<Timeframe, List<Candle>>()
                 val timeframes = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1)
                 for (timeframe in timeframes) {
-                    val result = provider.getHistoricalCandles(timeframe, 200)
+                    val result = provider.getHistoricalCandles(timeframe, 500)
                     if (result.isFailure) throw result.exceptionOrNull()
                         ?: IllegalStateException("历史数据请求失败")
                     candleMap[timeframe] = result.getOrThrow()
@@ -1263,6 +1272,51 @@ class MainActivity : AppCompatActivity() {
         decisionReasonText.text = decisionReasonText.text.toString() +
             "\n\n报价来源：MT5 屏幕读取，经你手动确认；报价年龄：${ageMillis} ms。" +
             "\n历史 K 线来源仍为 Twelve Data。信号未经充分回测，不保证盈利；应用不会自动下单。"
+    }
+
+    private fun runStrategyBacktest() {
+        val candles = latestCandles.mapValues { (_, series) -> series.toList() }
+        if (listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
+                candles[it].orEmpty().size < 50
+            }
+        ) {
+            backtestText.text = "无法回测：请先成功加载 M5、M15、H1 历史 K 线。"
+            backtestText.setTextColor(red)
+            return
+        }
+
+        backtestText.text = "正在逐根 K 线回放策略；只使用信号发生时已收盘的数据……"
+        backtestText.setTextColor(gold)
+        ioExecutor.execute {
+            try {
+                val result = StrategyBacktester.run(candles, maxHoldBars = 48)
+                val profitFactor = result.profitFactor?.let { fmt(it) }
+                    ?: if (result.totalR > 0.0) "没有亏损交易样本" else "—"
+                val rendered = buildString {
+                    appendLine("历史回测（研究用途，不是未来收益预测）")
+                    appendLine("M5 样本：${result.sampleBars} 根 · 覆盖约 ${String.format(Locale.US, "%.1f", result.sampleDurationDays)} 天")
+                    appendLine("交易：${result.trades.size} · 盈利：${result.wins} · 亏损：${result.losses} · 胜率：${String.format(Locale.US, "%.1f", result.winRatePercent)}%")
+                    appendLine("累计结果：${fmt(result.totalR)} R · 单笔期望：${fmt(result.expectancyR)} R · Profit Factor：$profitFactor")
+                    appendLine("最大回撤：${fmt(result.maxDrawdownR)} R · 最长持仓：48 根 M5 K 线")
+                    appendLine("回放规则：信号使用当时已收盘的 M5/M15/H1 K 线；下一根 M5 开盘进场；同一根 K 线同时触及止损和止盈时，按止损先发生。")
+                    appendLine("尚未计入：Bid/Ask 点差、滑点、佣金、执行延迟、拒单与经纪商价格差异。")
+                    if (result.sampleIsTooSmall) {
+                        append("警告：样本少于 30 笔或覆盖不足 7 天，不能据此判断策略有盈利优势。")
+                    } else {
+                        append("仍需扩大样本并进行样本外验证；历史结果不保证未来盈利。")
+                    }
+                }
+                runOnUiThread {
+                    backtestText.text = rendered
+                    backtestText.setTextColor(if (result.sampleIsTooSmall) gold else white)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    backtestText.text = "回测失败：${error.message ?: "未知错误"}"
+                    backtestText.setTextColor(red)
+                }
+            }
+        }
     }
 
     private fun fmt(value: Double?): String =
