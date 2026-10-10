@@ -43,6 +43,14 @@ import com.goldbee.mt5.Mt5ScreenAccessibilityService
 import com.goldbee.settings.ApiKeyStore
 import com.goldbee.settings.EncryptedApiKeyStore
 import com.goldbee.risk.RiskStateStore
+import com.goldbee.decision.TradeDirection
+import com.goldbee.paper.PaperExitReason
+import com.goldbee.paper.PaperQuote
+import com.goldbee.paper.PaperSignal
+import com.goldbee.paper.PaperTrade
+import com.goldbee.paper.PaperTradeStatus
+import com.goldbee.paper.PaperTradingEngine
+import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -134,6 +142,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var backtestCostInput: EditText
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
+    private lateinit var paperTradeText: TextView
+    private var pendingPaperSignal: PaperSignal? = null
     private lateinit var copySignalInput: EditText
     private lateinit var copyResultText: TextView
     private lateinit var riskLossInput: EditText
@@ -600,7 +610,19 @@ class MainActivity : AppCompatActivity() {
             11f,
             gold
         )
+        paperTradeText = addLabel(
+            decision,
+            "模拟账户：尚无交易。确认按钮只会创建本地模拟记录，不会点击 MT5 或发送真实订单。",
+            12f,
+            white
+        )
+        val paperRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(paperRow, "确认信号并开模拟单", true) { confirmPaperTrade() }
+        addButton(paperRow, "刷新报价并检查 SL/TP") { updatePaperTradeFromQuote() }
+        decision.addView(paperRow)
+        addButton(decision, "按当前报价手动平仓模拟单") { closePaperTradeManually() }
         root.addView(decision)
+        refreshPaperTradeStatus()
 
         val riskCard = makeCard()
         addLabel(riskCard, "风险记录（手动同步 MT5 结果）", 17f, white, true)
@@ -866,6 +888,16 @@ class MainActivity : AppCompatActivity() {
         copyResultText.text = copyResultText.text.toString() +
             "\n报价来源：MT5 屏幕读取（${ageMillis} ms）。历史 K 线来自 Twelve Data。" +
             "\n此结果只用于人工复核，不会自动下单，也不保证盈利。"
+        pendingPaperSignal = PaperSignal(
+            direction = signal.direction,
+            plannedEntry = entry,
+            stopLoss = stopLoss,
+            takeProfit = takeProfit,
+            source = "COPY",
+            createdAtMillis = System.currentTimeMillis()
+        )
+        paperTradeText.text = "COPY 信号已通过审核。请确认后开模拟单；开仓时会重新读取 MT5 Bid/Ask，并再次检查报价新鲜度、追价距离和风险回报比。"
+        paperTradeText.setTextColor(gold)
     }
 
     private fun refreshQuoteAndEvaluate(
@@ -949,6 +981,23 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDecision(decision: DecisionResult) {
+        if (decision.action == DecisionAction.BUY || decision.action == DecisionAction.SELL) {
+            val setup = decision.setup
+            pendingPaperSignal = if (setup == null) null else PaperSignal(
+                direction = if (decision.action == DecisionAction.BUY) TradeDirection.BUY else TradeDirection.SELL,
+                plannedEntry = setup.entry,
+                stopLoss = setup.stopLoss,
+                takeProfit = setup.takeProfit,
+                source = "REAL",
+                createdAtMillis = System.currentTimeMillis()
+            )
+            if (pendingPaperSignal != null && ::paperTradeText.isInitialized) {
+                paperTradeText.text = "REAL 信号已生成。点击“确认信号并开模拟单”后，系统会重新核对最新 MT5 Bid/Ask。"
+                paperTradeText.setTextColor(gold)
+            }
+        } else {
+            pendingPaperSignal = null
+        }
         decisionText.text = decision.action.name
         decisionText.setTextColor(
             when (decision.action) {
@@ -989,6 +1038,226 @@ class MainActivity : AppCompatActivity() {
                 setup.reason,
                 targetOptions
             )
+        }
+    }
+
+
+    private fun readFreshPaperQuote(): PaperQuote? {
+        val observation = getSharedPreferences(
+            Mt5ScreenAccessibilityService.PREFS_NAME,
+            MODE_PRIVATE
+        )
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        if (source != "ACCESSIBILITY" && source != "SCREEN_OCR") return null
+        return PaperQuote(
+            symbol = observation.getString(Mt5ScreenAccessibilityService.KEY_SYMBOL, "").orEmpty(),
+            bid = observation.getString(Mt5ScreenAccessibilityService.KEY_BID, "").orEmpty().toDoubleOrNull() ?: Double.NaN,
+            ask = observation.getString(Mt5ScreenAccessibilityService.KEY_ASK, "").orEmpty().toDoubleOrNull() ?: Double.NaN,
+            timestampMillis = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        )
+    }
+
+    private fun confirmPaperTrade() {
+        val now = System.currentTimeMillis()
+        val active = loadPaperTrade()
+        if (active?.status == PaperTradeStatus.OPEN) {
+            paperTradeText.text = "已有模拟单持仓。请先刷新报价检查 SL/TP，或手动平仓；不能重复开仓。"
+            paperTradeText.setTextColor(gold)
+            return
+        }
+        val signal = pendingPaperSignal
+        if (signal == null) {
+            paperTradeText.text = "没有有效的 BUY/SELL 信号。先重新分析 MT5 报价，或通过 COPY 审核获得可用信号。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        if (now - signal.createdAtMillis !in 0L..120_000L) {
+            pendingPaperSignal = null
+            paperTradeText.text = "信号已超过 2 分钟，已拒绝使用旧信号。请重新分析后再确认。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        val analysis = latestAnalysis
+        val atr = analysis?.m15?.indicators?.atr14
+        if (atr == null || !atr.isFinite() || atr <= 0.0) {
+            paperTradeText.text = "M15 ATR 不可用，无法验证进场偏差；不能开模拟单。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        val quote = readFreshPaperQuote()
+        if (quote == null) {
+            paperTradeText.text = "未取得 MT5 屏幕 Bid/Ask。请开启只读读取/OCR，确认 XAUUSD 报价可见后重试。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        val attempt = PaperTradingEngine.open(
+            signal = signal,
+            quote = quote,
+            nowMillis = now,
+            maxEntryDistance = atr * 0.35,
+            minimumRiskReward = 1.0
+        )
+        val trade = attempt.trade
+        if (trade == null) {
+            paperTradeText.text = "模拟开仓被拒绝：${attempt.reason}"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        savePaperTrade(trade)
+        pendingPaperSignal = null
+        paperTradeText.text = "模拟单已开启：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n入场 Bid ${fmt(trade.entryBid)} / Ask ${fmt(trade.entryAsk)} · 点差 ${fmt(trade.entryAsk - trade.entryBid)}\n${attempt.reason}\n注意：这是本地模拟，不会发送真实订单。"
+        paperTradeText.setTextColor(green)
+        refreshPaperTradeStatus()
+    }
+
+    private fun updatePaperTradeFromQuote() {
+        val trade = loadPaperTrade()
+        if (trade == null || trade.status != PaperTradeStatus.OPEN) {
+            refreshPaperTradeStatus()
+            return
+        }
+        val quote = readFreshPaperQuote()
+        if (quote == null) {
+            paperTradeText.text = "无法检查模拟单：没有 MT5 屏幕 Bid/Ask。请刷新屏幕读取，过期报价不能触发模拟 SL/TP。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val attempt = PaperTradingEngine.update(trade, quote, now)
+        val updated = attempt.trade
+        if (updated == null) {
+            paperTradeText.text = attempt.reason
+            paperTradeText.setTextColor(red)
+            return
+        }
+        savePaperTrade(updated)
+        if (updated.status == PaperTradeStatus.CLOSED) {
+            recordPaperClosure(updated)
+            paperTradeText.text = "${attempt.reason}\n方向：${updated.direction} · 入场：${fmt(updated.entryPrice)} · 出场：${fmt(updated.exitPrice)}\n价格盈亏：${fmt(updated.pnlPrice)}（未换算账户货币；尚未应用经纪商合约规格/手数/佣金/隔夜费）"
+            paperTradeText.setTextColor(if ((updated.pnlPrice ?: 0.0) >= 0.0) green else red)
+        } else {
+            val closeSide = if (updated.direction == TradeDirection.BUY) quote.bid else quote.ask
+            val floating = if (updated.direction == TradeDirection.BUY) closeSide - updated.entryPrice else updated.entryPrice - closeSide
+            paperTradeText.text = "${attempt.reason}\n${updated.direction} · Entry ${fmt(updated.entryPrice)} · 当前平仓侧报价 ${fmt(closeSide)} · 浮动价格盈亏 ${fmt(floating)}\nSL ${fmt(updated.stopLoss)} · TP ${fmt(updated.takeProfit)}"
+            paperTradeText.setTextColor(gold)
+        }
+        refreshPaperTradeStatus()
+    }
+
+    private fun closePaperTradeManually() {
+        val trade = loadPaperTrade()
+        if (trade == null || trade.status != PaperTradeStatus.OPEN) {
+            paperTradeText.text = "当前没有未平仓的模拟单。"
+            paperTradeText.setTextColor(muted)
+            return
+        }
+        val quote = readFreshPaperQuote()
+        if (quote == null) {
+            paperTradeText.text = "手动平仓失败：需要 3 秒内的有效 MT5 Bid/Ask。"
+            paperTradeText.setTextColor(red)
+            return
+        }
+        val now = System.currentTimeMillis()
+        val attempt = PaperTradingEngine.closeManually(trade, quote, now)
+        val closed = attempt.trade
+        if (closed == null) {
+            paperTradeText.text = attempt.reason
+            paperTradeText.setTextColor(red)
+            return
+        }
+        savePaperTrade(closed)
+        recordPaperClosure(closed)
+        paperTradeText.text = "${attempt.reason}\n出场价：${fmt(closed.exitPrice)} · 价格盈亏：${fmt(closed.pnlPrice)}（未换算账户货币）"
+        paperTradeText.setTextColor(if ((closed.pnlPrice ?: 0.0) >= 0.0) green else red)
+        refreshPaperTradeStatus()
+    }
+
+    private fun recordPaperClosure(trade: PaperTrade) {
+        val pnl = trade.pnlPrice ?: return
+        val wins = prefs.getInt("paper_wins", 0) + if (pnl > 0.0) 1 else 0
+        val losses = prefs.getInt("paper_losses", 0) + if (pnl < 0.0) 1 else 0
+        val flats = prefs.getInt("paper_flats", 0) + if (pnl == 0.0) 1 else 0
+        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble() + pnl
+        prefs.edit()
+            .putInt("paper_wins", wins)
+            .putInt("paper_losses", losses)
+            .putInt("paper_flats", flats)
+            .putFloat("paper_total_pnl_price", total.toFloat())
+            .apply()
+    }
+
+    private fun savePaperTrade(trade: PaperTrade) {
+        val json = JSONObject()
+            .put("direction", trade.direction.name)
+            .put("entryPrice", trade.entryPrice)
+            .put("plannedEntry", trade.plannedEntry)
+            .put("stopLoss", trade.stopLoss)
+            .put("takeProfit", trade.takeProfit)
+            .put("entryBid", trade.entryBid)
+            .put("entryAsk", trade.entryAsk)
+            .put("entryTimestampMillis", trade.entryTimestampMillis)
+            .put("source", trade.source)
+            .put("status", trade.status.name)
+        fun putNullable(key: String, value: Any?) {
+            json.put(key, value ?: JSONObject.NULL)
+        }
+        putNullable("exitPrice", trade.exitPrice)
+        putNullable("exitBid", trade.exitBid)
+        putNullable("exitAsk", trade.exitAsk)
+        putNullable("exitTimestampMillis", trade.exitTimestampMillis)
+        putNullable("exitReason", trade.exitReason?.name)
+        putNullable("pnlPrice", trade.pnlPrice)
+        prefs.edit().putString("paper_trade_json", json.toString()).apply()
+    }
+
+    private fun loadPaperTrade(): PaperTrade? {
+        val raw = prefs.getString("paper_trade_json", null) ?: return null
+        return try {
+            val json = JSONObject(raw)
+            fun nullableDouble(key: String): Double? =
+                if (json.isNull(key)) null else json.optDouble(key).takeIf { it.isFinite() }
+            fun nullableLong(key: String): Long? =
+                if (json.isNull(key)) null else json.optLong(key)
+            PaperTrade(
+                direction = TradeDirection.valueOf(json.getString("direction")),
+                entryPrice = json.getDouble("entryPrice"),
+                plannedEntry = json.getDouble("plannedEntry"),
+                stopLoss = json.getDouble("stopLoss"),
+                takeProfit = json.getDouble("takeProfit"),
+                entryBid = json.getDouble("entryBid"),
+                entryAsk = json.getDouble("entryAsk"),
+                entryTimestampMillis = json.getLong("entryTimestampMillis"),
+                source = json.optString("source", "UNKNOWN"),
+                status = PaperTradeStatus.valueOf(json.getString("status")),
+                exitPrice = nullableDouble("exitPrice"),
+                exitBid = nullableDouble("exitBid"),
+                exitAsk = nullableDouble("exitAsk"),
+                exitTimestampMillis = nullableLong("exitTimestampMillis"),
+                exitReason = if (json.isNull("exitReason")) null else PaperExitReason.valueOf(json.getString("exitReason")),
+                pnlPrice = nullableDouble("pnlPrice")
+            )
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun refreshPaperTradeStatus() {
+        if (!::paperTradeText.isInitialized) return
+        val trade = loadPaperTrade()
+        val wins = prefs.getInt("paper_wins", 0)
+        val losses = prefs.getInt("paper_losses", 0)
+        val flats = prefs.getInt("paper_flats", 0)
+        val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble()
+        val stats = "历史模拟结果：盈利 $wins · 亏损 $losses · 持平 $flats · 累计价格盈亏 ${fmt(total)}（非账户货币）"
+        if (trade?.status == PaperTradeStatus.OPEN) {
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n开仓点差：${fmt(trade.entryAsk - trade.entryBid)} · 来源：${trade.source}\n$stats\n切换到 MT5 确保报价更新，再回到此处点击检查 SL/TP。"
+            paperTradeText.setTextColor(gold)
+        } else if (trade?.status == PaperTradeStatus.CLOSED) {
+            paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason} · 价格盈亏 ${fmt(trade.pnlPrice)}\n$stats"
+            paperTradeText.setTextColor(if ((trade.pnlPrice ?: 0.0) >= 0.0) green else red)
+        } else {
+            paperTradeText.text = "模拟账户尚无交易。确认 BUY/SELL 信号后才会开模拟单。\n$stats"
+            paperTradeText.setTextColor(white)
         }
     }
 
