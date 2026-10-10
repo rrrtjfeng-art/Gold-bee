@@ -637,13 +637,14 @@ class MainActivity : AppCompatActivity() {
         val decision = makeCard()
         addLabel(decision, "研究信号（未回测）", 17f, white, true)
         decisionText = addLabel(decision, "NO TRADE", 25f, red, true)
-        decisionReasonText = addLabel(decision, "Free 免费版没有连续实时行情流。当前仅开放历史技术分析；REAL/COPY 不生成可跟随信号。", 12f, white)
+        decisionReasonText = addLabel(decision, "先加载 M5/M15/H1 历史 K 线，再用 MT5 屏幕当前 Bid/Ask 生成 REAL 判断。参考行情不会单独作为可执行信号。", 12f, white)
         addLabel(
             decision,
             "注意：信号逻辑尚未证明具有盈利优势。仅用于研究，不代表盈利保证；不自动下单，真实交易由你在 MT5 中决定。",
             11f,
             gold
         )
+        addButton(decision, "用 MT5 当前报价分析 REAL 信号", true) { analyzeRealFromMt5Screen() }
         addLabel(decision, "模拟账户参数", 14f, white, true)
         addLabel(
             decision,
@@ -1045,6 +1046,109 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun analyzeRealFromMt5Screen() {
+        pendingPaperSignal = null
+        val now = System.currentTimeMillis()
+        val observation = getSharedPreferences(
+            Mt5ScreenAccessibilityService.PREFS_NAME,
+            MODE_PRIVATE
+        )
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        val age = now - observedAt
+        if (source !in setOf("ACCESSIBILITY", "SCREEN_OCR")) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：没有 MT5 屏幕报价。请启用只读无障碍读取或用户授权的屏幕 OCR。"
+                )
+            )
+            return
+        }
+        if (observedAt <= 0L || age !in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：MT5 屏幕报价观察已过期（${age.coerceAtLeast(0L)} ms）。切换到 MT5，等 Bid/Ask 更新后立即重试。"
+                )
+            )
+            return
+        }
+
+        val quote = readFreshPaperQuote()
+        if (quote == null || quote.ask <= quote.bid) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：无法可靠读取有效的 XAUUSD Bid/Ask；请核对 MT5 画面和 OCR 识别。"
+                )
+            )
+            return
+        }
+        val normalizedSymbol = quote.symbol.uppercase().replace("/", "").trim()
+        if (normalizedSymbol !in setOf("XAUUSD", "GOLD")) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：当前屏幕品种为 $normalizedSymbol，不是已确认的 XAUUSD/GOLD。"
+                )
+            )
+            return
+        }
+
+        val nowSeconds = now / 1000L
+        val candles = latestCandles.mapValues { (timeframe, items) ->
+            items.filter { candle -> candle.timestamp + timeframe.seconds <= nowSeconds }
+        }
+        val minimumBars = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).all { tf ->
+            candles[tf].orEmpty().size >= 50
+        }
+        val analysis = if (minimumBars) runCatching {
+            MultiTimeframeAnalyzer.analyze(candles)
+        }.getOrNull() else null
+        if (!minimumBars || analysis == null) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：闭合 K 线不足。请先加载历史数据，并确保排除未收盘 K 线后 M5/M15/H1 每周期仍至少有 50 根有效 K 线。"
+                )
+            )
+            return
+        }
+
+        val snapshot = MarketSnapshot(
+            symbol = "XAUUSD",
+            bid = quote.bid,
+            ask = quote.ask,
+            timestamp = quote.timestampMillis,
+            candles = candles,
+            source = "MT5_SCREEN",
+            receivedAt = System.currentTimeMillis()
+        )
+        val gated = TradeDecisionGate.evaluate(
+            snapshot = snapshot,
+            analysis = analysis,
+            candles = candles,
+            riskState = RiskStateStore.get(this)
+        )
+        showDecision(gated.decision)
+        decisionReasonText.text = decisionReasonText.text.toString() +
+            "\\n\\n报价来源：MT5 屏幕读取（观察年龄 ${age} ms）" +
+            "\\nBid：${fmt(quote.bid)} · Ask：${fmt(quote.ask)} · 点差：${fmt(quote.ask - quote.bid)}" +
+            "\\n风险闸门：${gated.reason}" +
+            "\\n注意：这是根据屏幕报价与已加载历史 K 线计算的方案，不保证盈利；确认模拟单时会再次检查报价与追价距离。"
     }
 
     private fun showDecision(decision: DecisionResult) {
