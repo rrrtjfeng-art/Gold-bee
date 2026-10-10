@@ -718,6 +718,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun evaluateCopySignal() {
+        pendingPaperSignal = null
         val parsed = CopySignalParser.parse(copySignalInput.text.toString())
         val signal = parsed.getOrNull()
         if (signal == null) {
@@ -1337,7 +1338,7 @@ class MainActivity : AppCompatActivity() {
             analysisText.text = "请先输入并保存 Twelve Data API Key。"
             return
         }
-        analysisText.text = "正在获取历史 K 线：M5 最多 2500 根，M15/H1 各 500 根…"
+        analysisText.text = "正在获取历史 K 线：M5 最多 2500 根，M15 1000 根，H1 500 根…"
         decisionText.text = "WAIT"
         decisionText.setTextColor(gold)
         decisionReasonText.text = "数据下载期间不会生成新方案。"
@@ -1350,7 +1351,7 @@ class MainActivity : AppCompatActivity() {
                 for (timeframe in timeframes) {
                     // M5 needs enough depth to cover more than a few trading days.
                     // M15/H1 retain 500 bars to limit request size and startup time.
-                    val requestedBars = if (timeframe == Timeframe.M5) 2500 else 500
+                    val requestedBars = when (timeframe) { Timeframe.M5 -> 2500; Timeframe.M15 -> 1000; Timeframe.H1 -> 500 }
                     val result = provider.getHistoricalCandles(timeframe, requestedBars)
                     if (result.isFailure) throw result.exceptionOrNull()
                         ?: IllegalStateException("历史数据请求失败")
