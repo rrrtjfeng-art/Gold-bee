@@ -33,6 +33,10 @@ object CopyDecisionGate {
             return blocked("复制信号没有明确 Entry，禁止追价跟随。")
         }
 
+        if (!signal.hasStopLoss() || !signal.hasTakeProfit()) {
+            return blocked("复制信号必须明确提供 SL 和 TP；禁止自动猜测止损止盈。")
+        }
+
         if (!analysis.m15.available) {
             return blocked("M15 数据不足，无法审核复制信号。")
         }
@@ -133,24 +137,14 @@ object CopyDecisionGate {
                 ?: currentPrice
 
         val stopLoss =
-            signal.stopLoss
-                ?: when (signal.direction) {
-                    TradeDirection.BUY ->
-                        entry * 0.995
-
-                    TradeDirection.SELL ->
-                        entry * 1.005
-                }
+            requireNotNull(signal.stopLoss) {
+                "COPY signal must include an explicit stop loss."
+            }
 
         val takeProfit =
-            signal.takeProfit
-                ?: when (signal.direction) {
-                    TradeDirection.BUY ->
-                        entry * 1.01
-
-                    TradeDirection.SELL ->
-                        entry * 0.99
-                }
+            requireNotNull(signal.takeProfit) {
+                "COPY signal must include an explicit take profit."
+            }
 
         val risk =
             abs(entry - stopLoss)
