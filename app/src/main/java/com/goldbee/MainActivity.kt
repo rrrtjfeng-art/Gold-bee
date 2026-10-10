@@ -914,6 +914,7 @@ class MainActivity : AppCompatActivity() {
                 targetOptions
             )
         }
+    }
 
     private fun refreshRiskStatus() {
         val state = RiskStateStore.get(this)
