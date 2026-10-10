@@ -3,12 +3,20 @@
 
     <!-- 允许 Gold Bee 访问互联网，后续用于连接实时 XAUUSD 行情 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
 
     <application
         android:allowBackup="true"
         android:label="Gold Bee"
         android:supportsRtl="true"
         android:theme="@style/Theme.GoldBee">
+
+        <service
+            android:name=".mt5.Mt5ScreenCaptureService"
+            android:label="Gold Bee MT5 屏幕文字识别"
+            android:foregroundServiceType="mediaProjection"
+            android:exported="false" />
 
         <service
             android:name=".mt5.Mt5ScreenAccessibilityService"

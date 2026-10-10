@@ -32,5 +32,8 @@ dependencies {
     // OkHttp：实时 WebSocket 网络连接
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // On-device OCR for user-approved MT5 screen capture; recognized text is processed locally.
+    implementation("com.google.mlkit:text-recognition:16.0.1")
+
     testImplementation("junit:junit:4.13.2")
 }
