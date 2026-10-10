@@ -1,6 +1,8 @@
 package com.goldbee
 
 import android.graphics.Color
+import android.content.ComponentName
+import android.provider.Settings
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -29,6 +31,7 @@ import com.goldbee.market.RealMarketPlanPolicy
 import com.goldbee.market.RealMarketApiPlan
 import com.goldbee.market.SourceQuoteTimestamp
 import com.goldbee.market.Timeframe
+import com.goldbee.mt5.Mt5ScreenAccessibilityService
 import com.goldbee.settings.ApiKeyStore
 import com.goldbee.settings.EncryptedApiKeyStore
 import com.goldbee.risk.RiskStateStore
@@ -66,6 +69,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var copyResultText: TextView
     private lateinit var riskLossInput: EditText
     private lateinit var riskStatusText: TextView
+    private lateinit var mt5ObservationText: TextView
     @Volatile private var latestCandles: Map<Timeframe, List<Candle>> = emptyMap()
     @Volatile private var latestAnalysis: MultiTimeframeAnalysis? = null
     @Volatile private var lastQuotePrice: Double? = null
@@ -89,6 +93,60 @@ class MainActivity : AppCompatActivity() {
         window.statusBarColor = bg
         window.navigationBarColor = bg
         buildScreen()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::mt5ObservationText.isInitialized) refreshMt5Observation()
+    }
+
+    private fun refreshMt5Observation() {
+        if (!::mt5ObservationText.isInitialized) return
+        val enabledServices = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+        ).orEmpty()
+        val serviceEnabled = enabledServices.split(':').any { flattened ->
+            ComponentName.unflattenFromString(flattened)?.className ==
+                Mt5ScreenAccessibilityService::class.java.name
+        }
+        val observation = getSharedPreferences(
+            Mt5ScreenAccessibilityService.PREFS_NAME,
+            MODE_PRIVATE
+        )
+        val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        if (!serviceEnabled) {
+            mt5ObservationText.text =
+                "状态：权限未开启。点击“开启屏幕读取权限”，在 Android 无障碍设置中手动启用 Gold Bee。"
+            mt5ObservationText.setTextColor(gold)
+            return
+        }
+        if (observedAt <= 0L) {
+            mt5ObservationText.text =
+                "状态：权限已开启，但还没有 MT5 屏幕记录。切换到官方 MT5 并停留几秒，再返回 Gold Bee。"
+            mt5ObservationText.setTextColor(gold)
+            return
+        }
+
+        fun value(key: String): String =
+            observation.getString(key, "").orEmpty().ifBlank { "未识别" }
+        fun price(key: String): String {
+            val raw = observation.getString(key, "").orEmpty()
+            return raw.toDoubleOrNull()?.takeIf { it.isFinite() && it > 0.0 }
+                ?.let { String.format(Locale.US, "%.3f", it) } ?: "未识别"
+        }
+        val ageSeconds = ((System.currentTimeMillis() - observedAt).coerceAtLeast(0L)) / 1000L
+        val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(observedAt))
+        mt5ObservationText.text = buildString {
+            appendLine("状态：已读取到 MT5 可访问文字（只读观察）")
+            appendLine("品种：${value(Mt5ScreenAccessibilityService.KEY_SYMBOL)} · 周期：${value(Mt5ScreenAccessibilityService.KEY_TIMEFRAME)}")
+            appendLine("方向：${value(Mt5ScreenAccessibilityService.KEY_DIRECTION)}")
+            appendLine("Entry：${price(Mt5ScreenAccessibilityService.KEY_ENTRY)} · SL：${price(Mt5ScreenAccessibilityService.KEY_SL)} · TP：${price(Mt5ScreenAccessibilityService.KEY_TP)}")
+            appendLine("Bid：${price(Mt5ScreenAccessibilityService.KEY_BID)} · Ask：${price(Mt5ScreenAccessibilityService.KEY_ASK)}")
+            appendLine("读取时间：$time（$ageSeconds 秒前）")
+            append("安全限制：屏幕识别结果不是经验证的实时行情，不会单独触发交易信号。")
+        }
+        mt5ObservationText.setTextColor(if (ageSeconds <= 10L) green else gold)
     }
 
     private fun dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
@@ -218,6 +276,29 @@ class MainActivity : AppCompatActivity() {
         candleText = addLabel(quote, "Open：—\nHigh：—\nLow：—\nClose：—", 13f, white)
         updateText = addLabel(quote, "数据时间：尚未获取", 11f, muted)
         root.addView(quote)
+
+        val mt5Card = makeCard()
+        addLabel(mt5Card, "MT5 屏幕观察（只读）", 17f, white, true)
+        addLabel(
+            mt5Card,
+            "只在官方 MT5 处于前台时读取系统可访问的文字，提取品种、周期、方向及明确标注的 Entry/SL/TP。不会点击或下单；图表上的线条、蜡烛图和非文本标签可能无法读取。",
+            11f,
+            muted
+        )
+        mt5ObservationText = addLabel(
+            mt5Card,
+            "尚未读取 MT5 屏幕。启用权限后切换到 MT5，再返回这里查看观察结果。",
+            13f,
+            white
+        )
+        val mt5Row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(mt5Row, "开启屏幕读取权限", true) {
+            startActivity(android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        addButton(mt5Row, "刷新读取结果") { refreshMt5Observation() }
+        mt5Card.addView(mt5Row)
+        root.addView(mt5Card)
+        refreshMt5Observation()
 
         val analysis = makeCard()
         addLabel(analysis, "多周期技术分析", 17f, white, true)

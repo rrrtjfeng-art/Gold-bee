@@ -10,6 +10,19 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.GoldBee">
 
+        <service
+            android:name=".mt5.Mt5ScreenAccessibilityService"
+            android:label="Gold Bee MT5 屏幕读取（只读）"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/mt5_accessibility_service" />
+        </service>
+
         <activity
             android:name=".MainActivity"
             android:exported="true">

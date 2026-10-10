@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mt5_accessibility_description">仅在官方 MetaTrader 5 应用处于前台时读取可访问的行情文字，提取品种、周期、方向和明确的 Entry/SL/TP。不会点击、下单或保存原始屏幕文字。</string>
+</resources>
