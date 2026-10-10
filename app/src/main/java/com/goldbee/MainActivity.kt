@@ -1714,7 +1714,7 @@ class MainActivity : AppCompatActivity() {
                     }.joinToString("\n") { order ->
                         String.format(
                             Locale.US,
-                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\\n取消边界 %.3f",
+                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\n取消边界 %.3f",
                             order.type.label, order.entry, order.stopLoss,
                             order.takeProfit1, order.riskReward1,
                             order.takeProfit2, order.riskReward2,
