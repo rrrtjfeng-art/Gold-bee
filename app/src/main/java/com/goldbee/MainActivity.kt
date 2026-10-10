@@ -1420,7 +1420,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
                     appendLine("回放规则：信号使用当时已收盘的 M5/M15/H1 K 线；下一根 M5 开盘进场；同一根 K 线同时触及止损和止盈时，按止损先发生。")
-                    appendLine("尚未计入：Bid/Ask 点差、滑点、佣金、执行延迟、拒单与经纪商价格差异。")
+                    appendLine("限制：只扣除你输入的固定往返成本折算值；未使用历史 Bid/Ask 逐笔数据，也未模拟动态点差、逐笔滑点、执行延迟、拒单及经纪商报价差异。成本设为 0 时属于未扣成本的乐观结果。")
                     if (result.sampleIsTooSmall) {
                         append("警告：样本少于 30 笔或覆盖不足 7 天，不能据此判断策略有盈利优势。")
                     } else {
