@@ -253,6 +253,7 @@ class GoldPriceDevWebSocketClient(
 
     private fun scheduleHandshakeTimeout(webSocket: WebSocket) {
         synchronized(this) {
+            if (userRequestedDisconnect || socket !== webSocket || subscriptionConfirmed) return
             cancelHandshakeTimeoutLocked()
             handshakeTimeoutFuture = reconnectScheduler.schedule({
                 val timedOut = synchronized(this@GoldPriceDevWebSocketClient) {
