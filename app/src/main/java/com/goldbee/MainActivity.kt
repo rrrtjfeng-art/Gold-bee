@@ -131,6 +131,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateText: TextView
     private lateinit var analysisText: TextView
     private lateinit var backtestText: TextView
+    private lateinit var backtestCostInput: EditText
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var copySignalInput: EditText
@@ -559,11 +560,31 @@ class MainActivity : AppCompatActivity() {
             12f,
             white
         )
+        addLabel(
+            analysis,
+            "回测成本假设（XAUUSD 价格美元/每笔往返）：把点差、滑点及手续费折算成价格距离。0.00 表示完全未计成本，结果会偏乐观；请尽量按你的 MT5 实际成本填写。",
+            11f,
+            muted
+        )
+        backtestCostInput = EditText(this).apply {
+            setText("0.00")
+            hint = "例如 0.30；0 = 未计成本"
+            setHintTextColor(muted)
+            setTextColor(white)
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(31, 37, 49))
+        }
+        analysis.addView(
+            backtestCostInput,
+            LinearLayout.LayoutParams(-1, dp(50)).apply { bottomMargin = dp(8) }
+        )
         addButton(analysis, "加载历史数据并分析", true) { loadHistoricalAnalysis() }
         addButton(analysis, "回测当前策略") { runStrategyBacktest() }
         backtestText = addLabel(
             analysis,
-            "尚未回测。回测会使用已加载的历史 K 线，并明确标出样本量与未计入的交易成本。",
+            "尚未回测。可设置往返成本假设，并同时查看扣成本前后的结果；回测仍不等于实盘预测。",
             12f,
             muted
         )
@@ -1349,6 +1370,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun runStrategyBacktest() {
+        val roundTripCostPrice = backtestCostInput.text.toString().trim().toDoubleOrNull()
+        if (roundTripCostPrice == null || !roundTripCostPrice.isFinite() || roundTripCostPrice < 0.0) {
+            backtestText.text = "无法回测：往返成本必须是大于或等于 0 的有效数字。"
+            backtestText.setTextColor(red)
+            return
+        }
         val candles = latestCandles.mapValues { (_, series) -> series.toList() }
         if (listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
                 candles[it].orEmpty().size < 50
@@ -1363,14 +1390,20 @@ class MainActivity : AppCompatActivity() {
         backtestText.setTextColor(gold)
         ioExecutor.execute {
             try {
-                val result = StrategyBacktester.run(candles, maxHoldBars = 48)
+                val result = StrategyBacktester.run(
+                    candles,
+                    maxHoldBars = 48,
+                    roundTripCostPrice = roundTripCostPrice
+                )
                 val profitFactor = result.profitFactor?.let { fmt(it) }
                     ?: if (result.totalR > 0.0) "没有亏损交易样本" else "—"
                 val rendered = buildString {
                     appendLine("历史回测（研究用途，不是未来收益预测）")
                     appendLine("M5 样本：${result.sampleBars} 根 · 覆盖约 ${String.format(Locale.US, "%.1f", result.sampleDurationDays)} 天")
                     appendLine("交易：${result.trades.size} · 盈利：${result.wins} · 亏损：${result.losses} · 胜率：${String.format(Locale.US, "%.1f", result.winRatePercent)}%")
-                    appendLine("累计结果：${fmt(result.totalR)} R · 单笔期望：${fmt(result.expectancyR)} R · Profit Factor：$profitFactor")
+                    appendLine("往返成本假设：${fmt(result.roundTripCostPrice)} 美元价格距离/笔（点差、滑点及手续费的折算值；0 表示未计成本）")
+                    appendLine("毛累计结果（未扣成本）：${fmt(result.grossTotalR)} R")
+                    appendLine("净累计结果（已扣假设成本）：${fmt(result.totalR)} R · 单笔净期望：${fmt(result.expectancyR)} R · 净 Profit Factor：$profitFactor")
                     appendLine("最大回撤：${fmt(result.maxDrawdownR)} R · 最长持仓：48 根 M5 K 线")
                     appendLine("多空分布：BUY ${result.trades.count { it.direction == com.goldbee.decision.TradeDirection.BUY }} 笔 · SELL ${result.trades.count { it.direction == com.goldbee.decision.TradeDirection.SELL }} 笔")
                     appendLine("最近交易明细（最多 10 笔，按时间顺序）：")
@@ -1380,7 +1413,7 @@ class MainActivity : AppCompatActivity() {
                         result.trades.takeLast(10).forEach { trade ->
                             val entryTime = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
                                 .format(Date(trade.entryTimeSeconds * 1000L))
-                            val rText = String.format(Locale.US, "%+.2fR", trade.rMultiple)
+                            val rText = String.format(Locale.US, "净 %+.2fR / 毛 %+.2fR", trade.rMultiple, trade.grossRMultiple)
                             appendLine(
                                 "$entryTime ${trade.direction} · 入场 ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)} · 出场 ${fmt(trade.exitPrice)} · $rText · ${trade.exitType}"
                             )
