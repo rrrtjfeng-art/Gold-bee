@@ -35,6 +35,12 @@ object TradeDecisionGate {
             return blocked("当前买卖报价无效，禁止交易。")
         }
 
+        if (snapshot.source.contains("Twelve Data", ignoreCase = true)) {
+            return blocked(
+                "当前行情源只提供参考价，没有真实 bid/ask 点差；无法可靠评估净盈亏比，禁止生成可执行交易建议。请使用具备真实买卖报价的行情源。"
+            )
+        }
+
         if (!freshnessGuard.isFresh(snapshot)) {
             return blocked("行情已经过期，禁止交易。")
         }
