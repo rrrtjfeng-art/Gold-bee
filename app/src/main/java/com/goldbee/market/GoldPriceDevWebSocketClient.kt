@@ -126,7 +126,7 @@ class GoldPriceDevWebSocketClient(
         closeCode: Int?,
         errorMessage: String?
     ) {
-        val isCurrent = synchronized(this) {
+        val wasCurrent = synchronized(this) {
             if (socket !== webSocket) {
                 false
             } else {
@@ -135,12 +135,12 @@ class GoldPriceDevWebSocketClient(
                 if (!WebSocketReconnectPolicy.shouldRetry(closeCode = closeCode)) {
                     terminalFailure = true
                 }
-                false.also { /* state mutation above is intentional */ }
+                true
             }
         }
 
         // A callback from an obsolete socket must not override a newer connection.
-        if (isCurrent) return
+        if (!wasCurrent) return
         listener.onDisconnected(source)
         if (errorMessage != null) listener.onError(source, errorMessage)
         scheduleReconnect(closeCode = closeCode)
