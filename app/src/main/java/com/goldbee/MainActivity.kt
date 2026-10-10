@@ -2426,7 +2426,10 @@ class MainActivity : AppCompatActivity() {
                     appendLine("Gold-bee 参数研究报告（不自动下单）")
                     appendLine("候选参数：${result.candidatesEvaluated} 组 · 训练/验证按时间顺序切分 70% / 30%")
                     appendLine("选择结果：最低多空评分 ${result.selectedConfig.minimumScore} · 目标盈亏比 1:${fmt(result.selectedConfig.targetR)}")
-                    appendLine("成本假设：每笔往返 ${fmt(result.validation.roundTripCostPrice)} 美元价格距离；0 表示没有扣成本")
+                    appendLine("成本假设：每笔往返 ${fmt(result.validation.roundTripCostPrice)} 美元价格距离")
+                    if (roundTripCostPrice == 0.0) {
+                        appendLine("重要：你填了 0，代表完全不扣交易成本；双倍成本测试也仍为 0，结果会偏乐观。")
+                    }
                     appendLine()
                     appendLine(describe("训练段", result.training))
                     appendLine(describe("样本外验证段（设定成本）", result.validation))
