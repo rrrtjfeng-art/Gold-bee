@@ -147,6 +147,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var updateText: TextView
     private lateinit var analysisText: TextView
     private lateinit var backtestText: TextView
+    private lateinit var sessionTrainingChart: SessionTrainingChartView
     private lateinit var backtestCostInput: EditText
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
@@ -847,9 +848,12 @@ class MainActivity : AppCompatActivity() {
             10f,
             muted
         )
+        addLabel(analysis, "训练可视化：比较各时段样本外净期望。绿色/红色表示设定成本下正/负期望，黄色/红色表示双倍成本下正/负期望。", 11f, muted)
+        sessionTrainingChart = SessionTrainingChartView().apply { setBackgroundColor(Color.rgb(12, 16, 23)) }
+        analysis.addView(sessionTrainingChart, LinearLayout.LayoutParams(-1, dp(250)).apply { bottomMargin = dp(10) })
         backtestText = addLabel(
             analysis,
-            "尚未回测。可设置往返成本假设，并同时查看扣成本前后的结果；回测仍不等于实盘预测。",
+            "尚未回测。先加载 M5/M15/H1 历史 K 线，再训练参数；图表将在分时段训练完成后显示样本外结果。",
             12f,
             muted
         )
@@ -2458,7 +2462,11 @@ class MainActivity : AppCompatActivity() {
                     }
                     appendLine("重要：参数搜索不是机器学习，也不能保证高频盈利。12 组候选和短历史会产生过拟合风险；先看样本外交易数、净期望、PF、回撤及双倍成本结果。")
                 }
+                val chartMetrics = results.map { (window, result) ->
+                    SessionChartMetric(window.label, result.validation.expectancyR, result.validationDoubleCost.expectancyR, result.validation.winRatePercent, result.validation.trades.size)
+                }
                 runOnUiThread {
+                    sessionTrainingChart.setMetrics(chartMetrics)
                     backtestText.text = rendered
                     backtestText.setTextColor(white)
                 }
@@ -2680,6 +2688,69 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+
+    private data class SessionChartMetric(
+        val label: String, val validationExpectancy: Double, val doubleCostExpectancy: Double,
+        val validationWinRate: Double, val validationTrades: Int
+    )
+
+    /** Shows held-out expectancy by session; this is not a profit forecast. */
+    private inner class SessionTrainingChartView : android.view.View(this@MainActivity) {
+        private val items = mutableListOf<SessionChartMetric>()
+        private val axisPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = Color.rgb(65, 76, 92); strokeWidth = dp(1).toFloat() }
+        private val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = white; textSize = dp(10).toFloat() }
+        private val smallPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = muted; textSize = dp(9).toFloat() }
+        private val barPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+
+        fun setMetrics(metrics: List<SessionChartMetric>) { items.clear(); items.addAll(metrics); invalidate() }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            canvas.drawColor(Color.rgb(12, 16, 23))
+            val left = dp(112).toFloat()
+            val right = width - dp(12).toFloat()
+            val top = dp(26).toFloat()
+            val rowHeight = dp(52).toFloat()
+            val plotWidth = (right - left).coerceAtLeast(dp(30).toFloat())
+            labelPaint.textSize = dp(10).toFloat()
+            canvas.drawText("样本外净期望 R/笔", dp(10).toFloat(), dp(16).toFloat(), labelPaint)
+            if (items.isEmpty()) {
+                smallPaint.textSize = dp(11).toFloat()
+                canvas.drawText("完成分时段训练后显示", dp(10).toFloat(), dp(44).toFloat(), smallPaint)
+                return
+            }
+            val maxAbs = (items.flatMap { listOf(it.validationExpectancy, it.doubleCostExpectancy) }
+                .map { kotlin.math.abs(it) }.maxOrNull() ?: 0.1).coerceAtLeast(0.1)
+            val centerX = left + plotWidth * 0.5f
+            canvas.drawLine(centerX, top - dp(5), centerX, top + rowHeight * items.size - dp(6), axisPaint)
+            items.forEachIndexed { index, item ->
+                val y = top + rowHeight * index
+                labelPaint.color = white
+                labelPaint.textSize = dp(10).toFloat()
+                canvas.drawText(item.label, dp(10).toFloat(), y + dp(3).toFloat(), labelPaint)
+                smallPaint.textSize = dp(9).toFloat()
+                canvas.drawText("验证 ${item.validationTrades} 笔", dp(10).toFloat(), y + dp(17).toFloat(), smallPaint)
+                canvas.drawText("胜率 ${String.format(Locale.US, "%.1f", item.validationWinRate)}%", dp(10).toFloat(), y + dp(30).toFloat(), smallPaint)
+                val barMax = plotWidth / 2f - dp(3).toFloat()
+                listOf(item.validationExpectancy, item.doubleCostExpectancy).forEachIndexed { barIndex, value ->
+                    val barY = y + dp(if (barIndex == 0) 9 else 25).toFloat()
+                    val barLength = (kotlin.math.abs(value) / maxAbs).toFloat() * barMax
+                    val positive = value >= 0.0
+                    barPaint.color = when { !positive -> red; barIndex == 0 -> green; else -> gold }
+                    val startX = if (positive) centerX else centerX - barLength
+                    canvas.drawRoundRect(startX, barY, startX + barLength, barY + dp(7).toFloat(), dp(2).toFloat(), dp(2).toFloat(), barPaint)
+                    labelPaint.color = if (positive) (if (barIndex == 0) green else gold) else red
+                    labelPaint.textSize = dp(8).toFloat()
+                    val valueText = String.format(Locale.US, "%+.2fR", value)
+                    val textX = if (positive) (centerX + barLength + dp(3)).coerceAtMost(right - dp(36)) else (startX - dp(35)).coerceAtLeast(left)
+                    canvas.drawText(valueText, textX, barY + dp(7).toFloat(), labelPaint)
+                }
+                canvas.drawLine(dp(8).toFloat(), y + rowHeight - dp(4), right, y + rowHeight - dp(4), axisPaint)
+            }
+            smallPaint.textSize = dp(9).toFloat()
+            canvas.drawText("上条：设定成本  ·  下条：成本 ×2", dp(10).toFloat(), height - dp(5).toFloat(), smallPaint)
+        }
+    }
 
     /**
      * Compact MT5-style chart rendered from loaded OHLC candles.
