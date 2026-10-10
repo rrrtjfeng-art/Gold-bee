@@ -1298,16 +1298,24 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val risk = kotlin.math.abs(entry - stopLoss)
-        val reward = kotlin.math.abs(takeProfit - entry)
+        // COPY's original Entry is used only to detect chasing. The displayed
+        // plan and paper-trade reference use the current executable Bid/Ask.
+        val planEntry = executableSidePrice
+        val risk = kotlin.math.abs(planEntry - stopLoss)
+        val reward = kotlin.math.abs(takeProfit - planEntry)
         val rr = if (risk > 0.0) reward / risk else 0.0
+        if (!rr.isFinite() || risk <= 0.0 || reward <= 0.0) {
+            blockCopy("按当前可执行报价计算后，风险或目标距离无效；不跟随。")
+            return
+        }
         copyResultText.setTextColor(gold)
         copyResultText.text = String.format(
             Locale.US,
-            "审核结果：%s（仅供人工复核）\n当前报价：%.3f\nEntry：%.3f · SL：%.3f · TP：%.3f\nR:R = 1:%.2f\n价格距离：%.3f\n理由：%s\n\n这不是下单指令。再次确认点差、报价和风险后，由你自行决定是否在 MT5 操作。",
+            "审核结果：%s（仅供人工复核）\n当前报价：%.3f\n原信号 Entry：%.3f\n计划参考 Entry：%.3f · SL：%.3f · TP：%.3f\n当前价重算 R:R = 1:%.2f\n原 Entry 距离：%.3f\n理由：%s\n\n这不是下单指令。再次确认点差、报价和风险后，由你自行决定是否在 MT5 操作。",
             evaluation.action.name,
             currentPrice,
             entry,
+            planEntry,
             stopLoss,
             takeProfit,
             rr,
@@ -1319,7 +1327,7 @@ class MainActivity : AppCompatActivity() {
             "\n此结果只用于人工复核，不会自动下单，也不保证盈利。"
         pendingPaperSignal = PaperSignal(
             direction = signal.direction,
-            plannedEntry = entry,
+            plannedEntry = planEntry,
             stopLoss = stopLoss,
             takeProfit = takeProfit,
             source = "COPY",
