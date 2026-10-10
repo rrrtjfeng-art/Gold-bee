@@ -23,9 +23,9 @@ object WebSocketReconnectPolicy {
         closeCode: Int? = null,
         errorCode: String? = null
     ): Boolean {
-        if (closeCode in terminalCloseCodes) return false
+        if (closeCode != null && closeCode in terminalCloseCodes) return false
         if (closeCode == 1000) return false
-        if (errorCode?.trim()?.lowercase() in terminalErrorCodes) return false
+        if (errorCode != null && errorCode.trim().lowercase() in terminalErrorCodes) return false
         return true
     }
 
