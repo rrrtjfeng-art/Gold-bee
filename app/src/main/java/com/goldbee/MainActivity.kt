@@ -1214,8 +1214,8 @@ class MainActivity : AppCompatActivity() {
         savePaperTrade(updated)
         if (updated.status == PaperTradeStatus.CLOSED) {
             recordPaperClosure(updated)
-            paperTradeText.text = "${attempt.reason}\n方向：${updated.direction} · 入场：${fmt(updated.entryPrice)} · 出场：${fmt(updated.exitPrice)}\n价格盈亏：${fmt(updated.pnlPrice)}（未换算账户货币；尚未应用经纪商合约规格/手数/佣金/隔夜费）"
-            paperTradeText.setTextColor(if ((updated.pnlPrice ?: 0.0) >= 0.0) green else red)
+            paperTradeText.text = "${attempt.reason}\n方向：${updated.direction} · 入场：${fmt(updated.entryPrice)} · 出场：${fmt(updated.exitPrice)}\n价格变动：${fmt(updated.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(updated.pnlUsd)}"
+            paperTradeText.setTextColor(if ((updated.pnlUsd ?: 0.0) >= 0.0) green else red)
         } else {
             val closeSide = if (updated.direction == TradeDirection.BUY) quote.bid else quote.ask
             val floating = if (updated.direction == TradeDirection.BUY) closeSide - updated.entryPrice else updated.entryPrice - closeSide
@@ -1248,8 +1248,8 @@ class MainActivity : AppCompatActivity() {
         }
         savePaperTrade(closed)
         recordPaperClosure(closed)
-        paperTradeText.text = "${attempt.reason}\n出场价：${fmt(closed.exitPrice)} · 价格盈亏：${fmt(closed.pnlPrice)}（未换算账户货币）"
-        paperTradeText.setTextColor(if ((closed.pnlPrice ?: 0.0) >= 0.0) green else red)
+        paperTradeText.text = "${attempt.reason}\n出场价：${fmt(closed.exitPrice)} · 价格变动：${fmt(closed.pnlPrice)} · 净盈亏：${fmtAccountMoney(closed.pnlUsd)}"
+        paperTradeText.setTextColor(if ((closed.pnlUsd ?: 0.0) >= 0.0) green else red)
         refreshPaperTradeStatus()
     }
 
