@@ -92,6 +92,34 @@ class StrategyBacktesterTest {
     }
 
     @Test
+    fun stopGapLossCanExceedOneR() {
+        assertEquals(
+            -3.0,
+            StrategyBacktester.calculateRMultiple(
+                direction = TradeDirection.BUY,
+                entryPrice = 100.0,
+                exitPrice = 97.0,
+                risk = 1.0,
+                exitType = BacktestExitType.STOP_LOSS,
+                plannedReward = 2.0
+            ),
+            0.0
+        )
+        assertEquals(
+            -3.0,
+            StrategyBacktester.calculateRMultiple(
+                direction = TradeDirection.SELL,
+                entryPrice = 100.0,
+                exitPrice = 103.0,
+                risk = 1.0,
+                exitType = BacktestExitType.STOP_LOSS,
+                plannedReward = 2.0
+            ),
+            0.0
+        )
+    }
+
+    @Test
     fun emptyOrInsufficientHistoryCannotClaimStrategyPerformance() {
         val result = StrategyBacktester.run(emptyMap<Timeframe, List<Candle>>())
         assertTrue(result.trades.isEmpty())
