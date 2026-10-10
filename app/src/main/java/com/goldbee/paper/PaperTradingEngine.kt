@@ -108,11 +108,17 @@ object PaperTradingEngine {
 
         val risk = abs(entry - signal.stopLoss)
         val reward = abs(signal.takeProfit - entry)
-        val rr = reward / risk
-        if (!risk.isFinite() || !reward.isFinite() || risk <= 0.0 ||
-            !rr.isFinite() || rr < minimumRiskReward
+        val netReward = reward - quote.spread
+        val netRisk = risk + quote.spread
+        val netRiskReward = netReward / netRisk
+        if (!risk.isFinite() || !reward.isFinite() || !netReward.isFinite() ||
+            !netRisk.isFinite() || risk <= 0.0 || netReward <= 0.0 ||
+            !netRiskReward.isFinite() || netRiskReward < minimumRiskReward
         ) {
-            return PaperTradeAttempt(null, "按当前 MT5 Ask/Bid 计算，风险回报比低于最低要求。")
+            return PaperTradeAttempt(
+                null,
+                "计入当前 MT5 点差后净盈亏比不足最低要求 ${String.format(java.util.Locale.US, "%.2f", minimumRiskReward)}；请选择更合适的 TP 或放弃交易。"
+            )
         }
 
         return PaperTradeAttempt(
