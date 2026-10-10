@@ -667,7 +667,7 @@ class MainActivity : AppCompatActivity() {
         decision.addView(tpRow)
         paperTpStatusText = addLabel(
             decision,
-            "默认选择小赚 TP +2.00。只有计入当前 MT5 点差后净盈亏比达到 1.0，才允许确认模拟单。",
+            "默认选择小赚 TP +2.00。只有按实际 MT5 Bid/Ask 进场价并计入往返佣金后净盈亏比达到 1.0，才允许确认模拟单。",
             11f,
             muted
         )
@@ -1128,16 +1128,30 @@ class MainActivity : AppCompatActivity() {
         val entry = if (base.direction == TradeDirection.BUY) quote.ask else quote.bid
         val risk = kotlin.math.abs(entry - base.stopLoss)
         val reward = kotlin.math.abs(target.price - entry)
-        val netReward = reward - quote.spread
-        val netRisk = risk + quote.spread
-        val netRr = if (netRisk > 0.0) netReward / netRisk else Double.NaN
-        if (!risk.isFinite() || risk <= 0.0 || !netRr.isFinite() || netReward <= 0.0 || netRr < 1.0) {
+        val lotSize = paperLotSizeInput.text.toString().trim().toDoubleOrNull()
+        val contractSize = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        val commission = paperCommissionInput.text.toString().trim().toDoubleOrNull()
+        if (lotSize == null || !lotSize.isFinite() || lotSize <= 0.0 ||
+            contractSize == null || !contractSize.isFinite() || contractSize <= 0.0 ||
+            commission == null || !commission.isFinite() || commission < 0.0
+        ) {
             pendingPaperSignal = null
-            paperTpStatusText.text = "NO TRADE：${target.style.label} TP ${fmt(target.price)} 在当前点差下净盈亏比不足 1.0（估算 ${fmt(netRr)}）。请改选更远 TP 或放弃交易。"
+            paperTpStatusText.text = "请先填写有效的模拟手数、每手合约大小和往返佣金，才能评估所选 TP。"
             paperTpStatusText.setTextColor(red)
             return
         }
-        paperTpStatusText.text = "已选 ${target.style.label} TP：${fmt(target.price)} · 距离 ${fmt(target.distance)}（约 ${fmt(target.estimatedPips)} pips）· 当前点差后净 R:R 1:${fmt(netRr)}。模拟开仓仍需再次通过价格和风险检查。"
+        val netRewardMoney = reward * contractSize * lotSize - commission * lotSize
+        val netRiskMoney = risk * contractSize * lotSize + commission * lotSize
+        val netRr = if (netRiskMoney > 0.0) netRewardMoney / netRiskMoney else Double.NaN
+        if (!risk.isFinite() || risk <= 0.0 || !netRr.isFinite() ||
+            netRewardMoney <= 0.0 || netRiskMoney <= 0.0 || netRr < 1.0
+        ) {
+            pendingPaperSignal = null
+            paperTpStatusText.text = "NO TRADE：${target.style.label} TP ${fmt(target.price)} 按实际 Bid/Ask 进场价及佣金计算后，净盈亏比不足 1.0（估算 ${fmt(netRr)}）。请改选更远 TP 或放弃交易。"
+            paperTpStatusText.setTextColor(red)
+            return
+        }
+        paperTpStatusText.text = "已选 ${target.style.label} TP：${fmt(target.price)} · 距离 ${fmt(target.distance)}（约 ${fmt(target.estimatedPips)} pips）· 按实际进场价及佣金估算净 R:R 1:${fmt(netRr)}。模拟开仓仍需再次通过价格和风险检查。"
         paperTpStatusText.setTextColor(green)
     }
 
