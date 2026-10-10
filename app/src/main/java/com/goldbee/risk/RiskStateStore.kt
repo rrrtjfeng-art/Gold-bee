@@ -86,7 +86,7 @@ object RiskStateStore {
         lossPercent: Double
     ) {
 
-        if (lossPercent <= 0.0) {
+        if (!lossPercent.isFinite() || lossPercent <= 0.0 || lossPercent > 100.0) {
             return
         }
 
