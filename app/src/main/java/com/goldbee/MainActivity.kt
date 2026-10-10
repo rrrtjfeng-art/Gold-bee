@@ -565,7 +565,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
         addLabel(
             copyCard,
-            "粘贴信号后，应用会先检查信号格式及 Entry、SL、TP 逻辑。RealMarketAPI Free 没有连续实时行情流，因此不会判定信号当前仍可跟随。",
+            "粘贴信号后，应用会检查方向、Entry、SL、TP、风险回报比、当前 MT5 屏幕报价、点差、价格距离和多周期趋势。没有新鲜且有效的 MT5 Bid/Ask 时，一律 NO TRADE。",
             11f,
             muted
         )
@@ -582,7 +582,7 @@ class MainActivity : AppCompatActivity() {
             copyResultText.setTextColor(white)
         }
         copyCard.addView(copyRow)
-        copyResultText = addLabel(copyCard, "等待审核。先刷新参考数据并加载 M5、M15、H1 历史数据；Free 版不会判定可跟随。", 13f, white)
+        copyResultText = addLabel(copyCard, "等待审核。先加载 M5、M15、H1 历史数据，并确保 MT5 屏幕读取或 OCR 正在更新。行情过期或识别不全时会拒绝跟随。", 13f, white)
         root.addView(copyCard)
 
         addLabel(root, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
