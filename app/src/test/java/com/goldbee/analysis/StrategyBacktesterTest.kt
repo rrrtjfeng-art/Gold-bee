@@ -1,0 +1,80 @@
+package com.goldbee.analysis
+
+import com.goldbee.decision.TradeDirection
+import com.goldbee.market.Candle
+import com.goldbee.market.Timeframe
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class StrategyBacktesterTest {
+
+    @Test
+    fun assumesStopLossFirstWhenBothLevelsTouchInSameCandleForBuy() {
+        val candle = candle(high = 102.0, low = 98.0, open = 100.0, close = 101.0)
+        assertEquals(
+            BacktestExitType.STOP_LOSS,
+            StrategyBacktester.resolveIntrabarExit(
+                direction = TradeDirection.BUY,
+                candle = candle,
+                stopLoss = 99.0,
+                takeProfit = 101.5
+            )
+        )
+    }
+
+    @Test
+    fun assumesStopLossFirstWhenBothLevelsTouchInSameCandleForSell() {
+        val candle = candle(high = 102.0, low = 98.0, open = 100.0, close = 99.0)
+        assertEquals(
+            BacktestExitType.STOP_LOSS,
+            StrategyBacktester.resolveIntrabarExit(
+                direction = TradeDirection.SELL,
+                candle = candle,
+                stopLoss = 101.0,
+                takeProfit = 98.5
+            )
+        )
+    }
+
+    @Test
+    fun detectsTargetOnlyWhenStopWasNotTouched() {
+        val candle = candle(high = 102.0, low = 99.5, open = 100.0, close = 101.5)
+        assertEquals(
+            BacktestExitType.TAKE_PROFIT,
+            StrategyBacktester.resolveIntrabarExit(
+                direction = TradeDirection.BUY,
+                candle = candle,
+                stopLoss = 99.0,
+                takeProfit = 101.0
+            )
+        )
+    }
+
+    @Test
+    fun emptyOrInsufficientHistoryCannotClaimStrategyPerformance() {
+        val result = StrategyBacktester.run(emptyMap<Timeframe, List<Candle>>())
+        assertTrue(result.trades.isEmpty())
+        assertEquals(0.0, result.winRatePercent, 0.0)
+        assertEquals(0.0, result.expectancyR, 0.0)
+        assertNull(result.profitFactor)
+        assertTrue(result.sampleIsTooSmall)
+    }
+
+    private fun candle(
+        high: Double,
+        low: Double,
+        open: Double,
+        close: Double
+    ) = Candle(
+        symbol = "XAUUSD",
+        timeframe = Timeframe.M5,
+        timestamp = 1_800_000_000L,
+        open = open,
+        high = high,
+        low = low,
+        close = close,
+        volume = 0.0
+    )
+}
