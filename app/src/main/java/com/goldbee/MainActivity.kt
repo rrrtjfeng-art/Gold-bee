@@ -2133,6 +2133,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         analysisText.text = "正在获取历史 K 线：M5 最多 2500 根，M15 1000 根，H1 500 根…"
+        if (::copyResultText.isInitialized) {
+            copyResultText.text = "正在加载历史 K 线（M5/M15/H1）…完成前不要审核信号。"
+            copyResultText.setTextColor(gold)
+        }
         decisionText.text = "WAIT"
         decisionText.setTextColor(gold)
         decisionReasonText.text = "数据下载期间不会生成新方案。"
@@ -2195,6 +2199,10 @@ class MainActivity : AppCompatActivity() {
                     decisionText.text = "WAIT"
                     decisionText.setTextColor(gold)
                     decisionReasonText.text = "历史数据已加载。正在获取 REST 参考数据；Free 版不生成可跟随信号。"
+                    if (::copyResultText.isInitialized) {
+                        copyResultText.text = "历史 K 线已加载：M5 " + candleMap[Timeframe.M5].orEmpty().size + " 根、M15 " + candleMap[Timeframe.M15].orEmpty().size + " 根、H1 " + candleMap[Timeframe.H1].orEmpty().size + " 根。现在确认 MT5 屏幕读取正在更新，再粘贴并审核信号。"
+                        copyResultText.setTextColor(green)
+                    }
                     refreshQuoteAndEvaluate(candleMap, analysis)
                 }
             } catch (error: Exception) {
@@ -2203,6 +2211,10 @@ class MainActivity : AppCompatActivity() {
                     decisionText.text = "NO TRADE"
                     decisionText.setTextColor(red)
                     decisionReasonText.text = "数据获取或解析失败。检查 Twelve Data Key、套餐权限、网络和请求额度。"
+                    if (::copyResultText.isInitialized) {
+                        copyResultText.text = "历史数据加载失败：" + (error.message ?: "未知错误") + "。检查 API Key、套餐权限、网络或请求额度后重试。"
+                        copyResultText.setTextColor(red)
+                    }
                 }
             }
         }
