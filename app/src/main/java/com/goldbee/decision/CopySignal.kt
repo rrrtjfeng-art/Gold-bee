@@ -38,12 +38,22 @@ object CopySignalParser {
         val upper =
             text.uppercase()
 
+        val hasBuy = containsBuy(upper)
+        val hasSell = containsSell(upper)
+        if (hasBuy && hasSell) {
+            return Result.failure(
+                IllegalArgumentException(
+                    "同时识别到 BUY 和 SELL，方向不明确，禁止跟随。"
+                )
+            )
+        }
+
         val direction =
             when {
-                containsBuy(upper) ->
+                hasBuy ->
                     TradeDirection.BUY
 
-                containsSell(upper) ->
+                hasSell ->
                     TradeDirection.SELL
 
                 else ->
