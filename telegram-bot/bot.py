@@ -135,6 +135,7 @@ def check_positions():
 
 
 def scan_symbol(symbol):
+    global paused
     if paused or len(state["positions"]) >= MAX_OPEN_TRADES:
         return
     limit = SPREAD_LIMITS.get(symbol)
@@ -162,7 +163,7 @@ def scan_symbol(symbol):
     # Daily loss circuit-breaker includes open floating PnL.
     daily_limit = START_BALANCE * MAX_DAILY_LOSS_PERCENT / 100.0
     if current_daily_pnl() <= -daily_limit:
-        paused_local = True
+        paused = True
         state["paused"] = True
         save_state()
         send(f"风险熔断：当日模拟净盈亏已达到亏损限制 {-daily_limit:.2f}，机器人已暂停。")
