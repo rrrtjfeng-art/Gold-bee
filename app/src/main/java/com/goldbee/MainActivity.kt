@@ -156,6 +156,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tradePage: LinearLayout
     private lateinit var historyPage: LinearLayout
     private lateinit var settingsPage: LinearLayout
+    private lateinit var terminalChartView: TerminalChartView
+    private var selectedChartTimeframe: Timeframe = Timeframe.M5
     private val terminalNavButtons = linkedMapOf<String, Button>()
     private lateinit var paperTradeText: TextView
     private lateinit var paperTradeHistoryText: TextView
@@ -529,6 +531,36 @@ class MainActivity : AppCompatActivity() {
         addLabel(homeCard, "模拟优先 · 你确认后才记录模拟交易 · 不会自动下真实订单", 11f, muted)
         homeDecisionText = addLabel(homeCard, "WAIT", 34f, gold, true)
         homeHintText = addLabel(homeCard, "还没有新分析。先加载历史 K 线，再读取 MT5 当前报价。", 13f, white)
+        val chartToolbar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        addLabel(chartToolbar, "K 线图", 14f, white, true)
+        listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).forEach { timeframe ->
+            val button = addButton(chartToolbar, timeframe.name, selectedChartTimeframe == timeframe) {
+                selectedChartTimeframe = timeframe
+                terminalChartView.invalidate()
+                for (i in 0 until chartToolbar.childCount) {
+                    val child = chartToolbar.getChildAt(i)
+                    if (child is Button) {
+                        val selected = child.text.toString() == timeframe.name
+                        child.setTextColor(if (selected) bg else white)
+                        child.backgroundTintList = android.content.res.ColorStateList.valueOf(
+                            if (selected) gold else Color.rgb(42, 53, 70)
+                        )
+                    }
+                }
+            }
+            button.minWidth = dp(48)
+            button.textSize = 10f
+        }
+        homeCard.addView(chartToolbar, LinearLayout.LayoutParams(-1, dp(44)).apply { topMargin = dp(6) })
+        terminalChartView = TerminalChartView()
+        terminalChartView.setBackgroundColor(Color.rgb(8, 12, 18))
+        homeCard.addView(terminalChartView, LinearLayout.LayoutParams(-1, dp(252)).apply {
+            bottomMargin = dp(8)
+        })
+        addLabel(homeCard, "图表使用已加载的历史 K 线；Entry / SL / TP 线会在有效信号生成后显示。报价延迟或数据不足时，不把图表当作实时交易依据。", 10f, muted)
         val homePlan = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
@@ -1136,6 +1168,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         latestCandles = candles
+        if (::terminalChartView.isInitialized) terminalChartView.invalidate()
         latestAnalysis = analysis
 
         val signalRisk = kotlin.math.abs(entry - stopLoss)
@@ -1465,6 +1498,7 @@ class MainActivity : AppCompatActivity() {
                 createdAtMillis = System.currentTimeMillis()
             )
             pendingPaperSignal = pendingRealSignalBase
+            if (::terminalChartView.isInitialized) terminalChartView.invalidate()
             updatePendingRealTakeProfit()
             if (pendingPaperSignal != null && ::paperTradeText.isInitialized) {
                 paperTradeText.text = "REAL 信号已生成。当前 TP 风格需通过净盈亏比检查；确认后只开模拟单。"
@@ -2009,6 +2043,7 @@ class MainActivity : AppCompatActivity() {
                 liveFeedController.seedHistoricalCandles(candleMap)
                 mt5QuoteController.seedHistoricalCandles(candleMap)
                 latestCandles = candleMap.toMap()
+                if (::terminalChartView.isInitialized) terminalChartView.invalidate()
                 latestAnalysis = analysis
                 val rendered = buildString {
                     appendLine("数据来源：Twelve Data · XAU/USD")
@@ -2280,6 +2315,7 @@ class MainActivity : AppCompatActivity() {
             riskState = RiskStateStore.get(this)
         )
         latestCandles = currentCandles
+        if (::terminalChartView.isInitialized) terminalChartView.invalidate()
         latestAnalysis = analysis
         showDecision(gated.decision)
         decisionReasonText.text = decisionReasonText.text.toString() +
@@ -2355,6 +2391,139 @@ class MainActivity : AppCompatActivity() {
                     backtestText.setTextColor(red)
                 }
             }
+        }
+    }
+
+
+    /**
+     * Compact MT5-style chart rendered from loaded OHLC candles.
+     * The chart never fabricates candles: without historical data it shows a clear empty state.
+     */
+    private inner class TerminalChartView : android.view.View {
+        private val gridPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(35, 43, 56)
+            strokeWidth = dp(1).toFloat()
+        }
+        private val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = muted
+            textSize = dp(10).toFloat()
+        }
+        private val bullPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = green
+            style = android.graphics.Paint.Style.FILL
+        }
+        private val bearPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = red
+            style = android.graphics.Paint.Style.FILL
+        }
+        private val wickPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            strokeWidth = dp(1).toFloat()
+        }
+        private val linePaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            strokeWidth = dp(1).toFloat()
+            pathEffect = android.graphics.DashPathEffect(floatArrayOf(dp(5).toFloat(), dp(4).toFloat()), 0f)
+        }
+        private val emaPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = gold
+            strokeWidth = dp(1.5f).toFloat()
+            style = android.graphics.Paint.Style.STROKE
+        }
+
+        override fun onDraw(canvas: android.graphics.Canvas) {
+            super.onDraw(canvas)
+            val w = width.toFloat()
+            val h = height.toFloat()
+            if (w <= 0f || h <= 0f) return
+            canvas.drawColor(Color.rgb(8, 12, 18))
+            val left = dp(8).toFloat()
+            val right = w - dp(58)
+            val top = dp(12).toFloat()
+            val bottom = h - dp(24)
+            if (right <= left || bottom <= top) return
+
+            for (i in 0..4) {
+                val y = top + (bottom - top) * i / 4f
+                canvas.drawLine(left, y, right, y, gridPaint)
+            }
+            for (i in 0..5) {
+                val x = left + (right - left) * i / 5f
+                canvas.drawLine(x, top, x, bottom, gridPaint)
+            }
+
+            val candles = latestCandles[selectedChartTimeframe].orEmpty().takeLast(60)
+            if (candles.isEmpty()) {
+                textPaint.textSize = dp(12).toFloat()
+                canvas.drawText("暂无 K 线", left + dp(10), top + dp(28), textPaint)
+                textPaint.textSize = dp(10).toFloat()
+                canvas.drawText("进入「回测」→ 加载历史数据", left + dp(10), top + dp(48), textPaint)
+                canvas.drawText("数据加载后，这里显示真实 OHLC 蜡烛图", left + dp(10), top + dp(66), textPaint)
+                return
+            }
+
+            val lowValue = candles.minOf { it.low }
+            val highValue = candles.maxOf { it.high }
+            val signal = pendingPaperSignal ?: pendingRealSignalBase
+            val levels = listOfNotNull(
+                signal?.takeProfit?.let { Triple(it, "TP", green) },
+                signal?.plannedEntry?.let { Triple(it, "ENTRY", gold) },
+                signal?.stopLoss?.let { Triple(it, "SL", red) }
+            )
+            val allValues = candles.flatMap { listOf(it.low, it.high) } + levels.map { it.first }
+            val minPrice = (allValues.minOrNull() ?: lowValue) - ((highValue - lowValue).coerceAtLeast(0.01) * 0.08)
+            val maxPrice = (allValues.maxOrNull() ?: highValue) + ((highValue - lowValue).coerceAtLeast(0.01) * 0.08)
+            val priceRange = (maxPrice - minPrice).coerceAtLeast(0.01)
+            fun yOf(price: Double): Float = bottom - ((price - minPrice) / priceRange).toFloat() * (bottom - top)
+
+            for (i in 0..4) {
+                val price = maxPrice - priceRange * i / 4.0
+                canvas.drawText(String.format(Locale.US, "%.2f", price), right + dp(4), top + (bottom - top) * i / 4f + dp(4), textPaint)
+            }
+
+            val slot = (right - left) / candles.size.toFloat()
+            val bodyWidth = (slot * 0.58f).coerceAtLeast(dp(2).toFloat())
+            val emaPath = android.graphics.Path()
+            var ema: Double? = null
+            val alpha = 2.0 / (9.0 + 1.0)
+            candles.forEachIndexed { index, candle ->
+                val x = left + slot * (index + 0.5f)
+                val yHigh = yOf(candle.high)
+                val yLow = yOf(candle.low)
+                val yOpen = yOf(candle.open)
+                val yClose = yOf(candle.close)
+                val paint = if (candle.close >= candle.open) bullPaint else bearPaint
+                wickPaint.color = paint.color
+                canvas.drawLine(x, yHigh, x, yLow, wickPaint)
+                canvas.drawRect(
+                    x - bodyWidth / 2f,
+                    minOf(yOpen, yClose),
+                    x + bodyWidth / 2f,
+                    maxOf(maxOf(yOpen, yClose), minOf(yOpen, yClose) + dp(1).toFloat()),
+                    paint
+                )
+                ema = if (ema == null) candle.close else alpha * candle.close + (1.0 - alpha) * ema!!
+                val emaY = yOf(ema!!)
+                if (index == 0) emaPath.moveTo(x, emaY) else emaPath.lineTo(x, emaY)
+            }
+            canvas.drawPath(emaPath, emaPaint)
+
+            levels.forEach { (price, label, color) ->
+                val y = yOf(price)
+                linePaint.color = color
+                canvas.drawLine(left, y, right, y, linePaint)
+                val labelPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    this.color = bg
+                    textSize = dp(9).toFloat()
+                    typeface = android.graphics.Typeface.DEFAULT_BOLD
+                }
+                val chip = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { this.color = color }
+                val labelWidth = dp(42).toFloat()
+                canvas.drawRoundRect(right - labelWidth, y - dp(9), right, y + dp(9), dp(3).toFloat(), dp(3).toFloat(), chip)
+                canvas.drawText(label, right - labelWidth + dp(4), y + dp(3).toFloat(), labelPaint)
+            }
+            val last = candles.last()
+            textPaint.color = white
+            canvas.drawText("${selectedChartTimeframe.name} · ${candles.size} bars · close ${String.format(Locale.US, "%.2f", last.close)}", left, h - dp(7).toFloat(), textPaint)
+            textPaint.color = muted
         }
     }
 
