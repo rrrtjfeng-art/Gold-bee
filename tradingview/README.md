@@ -9,6 +9,7 @@ File: `GoldBee_Swing_High_Low_SR.pine`
 3. Create a new indicator, replace the editor contents with `GoldBee_Swing_High_Low_SR.pine`, and save it.
 4. Add the indicator to the chart.
 5. Start with 3 left bars / 3 confirmation bars. Larger values show fewer, generally broader swings; smaller values show more noise.
+6. To receive alerts, create a TradingView alert and select one of this indicator's `Gold Bee` conditions. Alerts depend on TradingView's chart data and your alert configuration.
 
 ## What it shows
 
@@ -16,6 +17,8 @@ File: `GoldBee_Swing_High_Low_SR.pine`
 - Green upward markers: confirmed Swing Lows / potential support pivots.
 - Horizontal levels: nearby pivots are merged using ATR-based tolerance.
 - Repeated pivot touches make the level line thicker.
+- HH / HL / LH / LL labels show confirmed market structure.
+- TradingView alert conditions are available for confirmed swing points, structure shifts, and support/resistance breaks.
 - A level stops extending when a candle closes through it.
 
 ## Important limits
