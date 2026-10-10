@@ -4,18 +4,18 @@ import com.goldbee.decision.TradeDirection
 import kotlin.math.abs
 
 /**
- * Alternative XAUUSD take-profit levels expressed in risk multiples.
+ * Fixed gold-price-distance TP examples. These are candidate levels, not
+ * predictions; market structure, spread, volatility and execution still matter.
  *
- * Pip size is broker-convention dependent. The default 0.1 is only a display
- * convention for estimating pips; it must not be treated as a universal broker rule.
+ * XAUUSD pip conventions vary by broker. The default is only a display estimate.
  */
 enum class TakeProfitStyle(
     val label: String,
-    val riskMultiple: Double
+    val priceDistance: Double
 ) {
-    SMALL("小赚", 1.0),
-    MEDIUM("中等", 1.5),
-    LARGE("大赚", 2.5)
+    SMALL("小赚", 2.0),
+    MEDIUM("中赚", 5.0),
+    LARGE("大赚", 10.0)
 }
 
 data class TakeProfitTarget(
@@ -48,13 +48,13 @@ object TakeProfitPlanner {
 
         val sign = if (direction == TradeDirection.BUY) 1.0 else -1.0
         return TakeProfitStyle.entries.map { style ->
-            val distance = risk * style.riskMultiple
+            val distance = style.priceDistance
             TakeProfitTarget(
                 style = style,
                 price = entry + sign * distance,
                 distance = distance,
                 estimatedPips = distance / pipSize,
-                riskReward = style.riskMultiple
+                riskReward = distance / risk
             )
         }
     }
