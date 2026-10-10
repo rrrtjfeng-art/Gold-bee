@@ -41,9 +41,12 @@ data class MarketSnapshot(
     }
 
     fun isPriceValid(): Boolean {
-        return bid > 0.0 &&
+        return bid.isFinite() &&
+                ask.isFinite() &&
+                bid > 0.0 &&
                 ask > 0.0 &&
-                ask >= bid
+                ask >= bid &&
+                spread.isFinite()
     }
 
     fun isFresh(

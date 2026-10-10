@@ -13,12 +13,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.MultiTimeframeAnalysis
-import com.goldbee.analysis.MultiTimeframeDecisionEngine
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
 import com.goldbee.decision.CopySignalParser
+import com.goldbee.decision.DecisionAction
+import com.goldbee.decision.DecisionResult
+import com.goldbee.decision.TradeDecisionGate
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
+import com.goldbee.market.MarketSnapshot
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
 import com.goldbee.market.Timeframe
@@ -57,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var latestCandles: Map<Timeframe, List<Candle>> = emptyMap()
     @Volatile private var latestAnalysis: MultiTimeframeAnalysis? = null
     @Volatile private var lastQuotePrice: Double? = null
+    @Volatile private var latestQuote: RealMarketPrice? = null
     @Volatile private var lastQuoteReceivedAt: Long = 0L
     private var polling = false
     private var requestInProgress = false
@@ -353,6 +357,95 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    private fun refreshQuoteAndEvaluate(
+        candles: Map<Timeframe, List<Candle>>,
+        analysis: MultiTimeframeAnalysis
+    ) {
+        val key = getRealMarketKey()
+        if (key.isBlank()) {
+            showDecision(
+                DecisionResult(
+                    action = DecisionAction.NO_TRADE,
+                    setup = null,
+                    confidence = 0.0,
+                    reason = "NO TRADE：缺少实时行情 API Key。"
+                )
+            )
+            return
+        }
+
+        client.fetchPrice(apiKey = key, symbol = "XAUUSD", timeframe = "M1") { result ->
+            result.onSuccess { quote ->
+                showPrice(quote)
+                val bid = quote.bid
+                val ask = quote.ask
+                if (bid == null || ask == null) {
+                    showDecision(
+                        DecisionResult(
+                            action = DecisionAction.NO_TRADE,
+                            setup = null,
+                            confidence = 0.0,
+                            reason = "NO TRADE：接口未提供有效 Bid/Ask，不能通过风险检查。"
+                        )
+                    )
+                } else {
+                    val receivedAt = lastQuoteReceivedAt
+                    val snapshot = MarketSnapshot(
+                        symbol = quote.symbol,
+                        bid = bid,
+                        ask = ask,
+                        timestamp = receivedAt,
+                        candles = candles,
+                        source = "RealMarketAPI",
+                        receivedAt = receivedAt
+                    )
+                    val gated = TradeDecisionGate.evaluate(
+                        snapshot = snapshot,
+                        analysis = analysis,
+                        candles = candles
+                    )
+                    showDecision(gated.decision)
+                }
+            }.onFailure { error ->
+                showDecision(
+                    DecisionResult(
+                        action = DecisionAction.NO_TRADE,
+                        setup = null,
+                        confidence = 0.0,
+                        reason = "NO TRADE：刷新实时报价失败，禁止使用旧报价生成方案。" + (error.message ?: "")
+                    )
+                )
+            }
+        }
+    }
+
+    private fun showDecision(decision: DecisionResult) {
+        decisionText.text = decision.action.name
+        decisionText.setTextColor(
+            when (decision.action) {
+                DecisionAction.BUY -> green
+                DecisionAction.SELL, DecisionAction.NO_TRADE -> red
+                else -> gold
+            }
+        )
+        val setup = decision.setup
+        decisionReasonText.text = if (setup == null) {
+            decision.reason
+        } else {
+            String.format(
+                Locale.US,
+                "%s\nEntry：%.3f\nSL：%.3f\nTP：%.3f\nR:R：1:%.1f\n模型评分置信度：%.0f%%\n原因：%s",
+                decision.reason,
+                setup.entry,
+                setup.stopLoss,
+                setup.takeProfit,
+                setup.riskReward,
+                decision.confidence * 100.0,
+                setup.reason
+            )
+        }
+    }
+
     private fun getRealMarketKey(): String {
         val typed = apiKeyInput.text.toString().trim()
         if (typed.isNotBlank()) return typed
@@ -384,6 +477,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPrice(q: RealMarketPrice) {
+        latestQuote = q
         lastQuotePrice = q.close
         lastQuoteReceivedAt = System.currentTimeMillis()
         statusText.text = "状态：已取得实时行情响应"
@@ -432,7 +526,6 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val analysis = MultiTimeframeAnalyzer.analyze(candleMap)
-                val decision = MultiTimeframeDecisionEngine.decide(candleMap, analysis)
                 latestCandles = candleMap.toMap()
                 latestAnalysis = analysis
                 val rendered = buildString {
@@ -455,30 +548,12 @@ class MainActivity : AppCompatActivity() {
 
                 runOnUiThread {
                     analysisText.text = rendered
-                    decisionText.text = decision.action.name
-                    decisionText.setTextColor(
-                        when (decision.action.name) {
-                            "BUY" -> green
-                            "SELL", "NO_TRADE" -> red
-                            else -> gold
-                        }
-                    )
-                    val setup = decision.setup
-                    decisionReasonText.text = if (setup == null) {
-                        decision.reason
-                    } else {
-                        String.format(
-                            Locale.US,
-                            "%s\nEntry：%.3f\nSL：%.3f\nTP：%.3f\nR:R：1:%.1f\n模型评分置信度：%.0f%%\n原因：%s",
-                            decision.reason,
-                            setup.entry,
-                            setup.stopLoss,
-                            setup.takeProfit,
-                            setup.riskReward,
-                            decision.confidence * 100.0,
-                            setup.reason
-                        )
-                    }
+                    latestCandles = candleMap.toMap()
+                    latestAnalysis = analysis
+                    decisionText.text = "WAIT"
+                    decisionText.setTextColor(gold)
+                    decisionReasonText.text = "历史数据已加载。正在刷新报价，并检查报价时效、点差、入场距离和盈亏比。"
+                    refreshQuoteAndEvaluate(candleMap, analysis)
                 }
             } catch (error: Exception) {
                 runOnUiThread {
