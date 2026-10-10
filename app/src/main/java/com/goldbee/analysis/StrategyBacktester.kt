@@ -1,7 +1,6 @@
 package com.goldbee.analysis
 
 import com.goldbee.decision.DecisionAction
-import com.goldbee.decision.MultiTimeframeDecisionEngine
 import com.goldbee.decision.TradeDirection
 import com.goldbee.decision.TradeSetup
 import com.goldbee.market.Candle
