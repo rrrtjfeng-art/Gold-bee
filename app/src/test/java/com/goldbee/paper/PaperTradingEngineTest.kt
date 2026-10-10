@@ -40,7 +40,7 @@ class PaperTradingEngineTest {
 
         val closed = PaperTradingEngine.update(
             opened.trade,
-            quote(4089.8, 4090.2, now + 1000),
+            quote(4089.6, 4089.8, now + 1000),
             now + 1000
         )
         assertTrue(closed.accepted)
