@@ -1032,32 +1032,59 @@ class MainActivity : AppCompatActivity() {
         tradePage.addView(riskCard)
         refreshRiskStatus()
 
-        val copyCard = makeCard()
-        addLabel(copyCard, "COPY · 检查别人发来的黄金信号", 17f, white, true)
+        val copyCard = makeCard().apply {
+            setPadding(dp(16), dp(16), dp(16), dp(16))
+            setBackgroundColor(Color.rgb(23, 31, 43))
+        }
+        addLabel(copyCard, "COPY 信号审核", 20f, gold, true)
         addLabel(
             copyCard,
-            "把别人发来的 BUY/SELL 信号粘贴在下面。应用会检查是否写清 Entry（进场价）、SL（止损）、TP（止盈），再对照当前 MT5 报价，判断是否已经涨跌太远。缺少关键价格、报价过期或风险不合格时，不跟单。",
-            11f,
-            muted
+            "把 Telegram 或其他地方的黄金信号复制过来。先粘贴，再审核；只有 Entry、SL、TP 齐全，且 MT5 报价和历史数据通过检查，才会给出跟随评估。这里不会自动下真实订单。",
+            12f,
+            white
         )
+        val copySetupRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(copySetupRow, "加载历史K线", true) { loadHistoricalAnalysis() }
+        addButton(copySetupRow, "开启MT5读取") {
+            startActivity(android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        }
+        copyCard.addView(copySetupRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
         copySignalInput = makeCopyInput()
+        copySignalInput.hint = "在这里粘贴信号，例如：XAUUSD BUY Entry 4050 SL 4040 TP 4070"
         copyCard.addView(
             copySignalInput,
             LinearLayout.LayoutParams(-1, dp(112)).apply { bottomMargin = dp(8) }
         )
-        val copyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        addButton(copyRow, "审核复制信号", true) { evaluateCopySignal() }
-        addButton(copyRow, "清空") {
+        val clipboardRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(clipboardRow, "从剪贴板粘贴", true) {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            val clip = clipboard.primaryClip
+            val text = if (clip != null && clip.itemCount > 0) {
+                runCatching { clip.getItemAt(0).coerceToText(this@MainActivity).toString() }.getOrNull().orEmpty()
+            } else ""
+            if (text.isBlank()) {
+                copyResultText.text = "剪贴板没有可用文字。请先复制信号内容。"
+                copyResultText.setTextColor(gold)
+            } else {
+                copySignalInput.setText(text)
+                copySignalInput.setSelection(copySignalInput.text.length)
+                copyResultText.text = "信号已粘贴。检查 Entry、SL、TP 后点击“审核复制信号”。"
+                copyResultText.setTextColor(white)
+            }
+        }
+        addButton(clipboardRow, "清空") {
             copySignalInput.text.clear()
             copyResultText.text = "等待审核。"
             copyResultText.setTextColor(white)
         }
-        copyCard.addView(copyRow)
-        copyResultText = addLabel(copyCard, "等待审核。先加载 M5、M15、H1 历史数据，并确保 MT5 屏幕读取或 OCR 正在更新。行情过期或识别不全时会拒绝跟随。", 13f, white)
-        tradePage.addView(copyCard)
+        copyCard.addView(clipboardRow, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(8) })
+        addButton(copyCard, "审核复制信号", true) { evaluateCopySignal() }
+        copyResultText = addLabel(copyCard, "快速流程：① 加载历史K线 ② 在 Android 设置中启用 Gold-bee 的 MT5 屏幕读取，或启动屏幕 OCR ③ 粘贴信号 ④ 点击审核。过期报价、缺少价格或追价风险过高时会拒绝跟随。", 13f, white)
+        tradePage.addView(copyCard, 0)
 
         addLabel(settingsPage, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
-        showTerminalPage("market")
+        // Open directly into COPY review to reduce taps for the user's main workflow.
+        showTerminalPage("trade")
     }
 
     private fun showTerminalPage(page: String) {
