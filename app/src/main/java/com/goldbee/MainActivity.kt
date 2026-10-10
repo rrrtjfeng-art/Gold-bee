@@ -14,6 +14,7 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
+import com.goldbee.settings.EncryptedApiKeyStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -190,9 +191,16 @@ class MainActivity : AppCompatActivity() {
             }
         )
 
-        val savedKey = prefs.getString("api_key", "").orEmpty()
+        // Migrate any previously saved plaintext key into Android Keystore-backed storage.
+        val legacyKey = prefs.getString("api_key", "").orEmpty()
+        if (legacyKey.isNotBlank()) {
+            EncryptedApiKeyStore.save(this, "realmarket_api_key", legacyKey)
+            prefs.edit().remove("api_key").apply()
+        }
+
+        val savedKey = EncryptedApiKeyStore.get(this, "realmarket_api_key")
         if (savedKey.isNotBlank()) {
-            apiKeyInput.hint = "已保存 API Key；留空可继续使用"
+            apiKeyInput.hint = "已安全保存 API Key；留空可继续使用"
         }
 
         val saveRow = LinearLayout(this).apply {
@@ -203,7 +211,8 @@ class MainActivity : AppCompatActivity() {
             val entered = apiKeyInput.text.toString().trim()
 
             if (entered.isNotBlank()) {
-                prefs.edit().putString("api_key", entered).apply()
+                EncryptedApiKeyStore.save(this, "realmarket_api_key", entered)
+                prefs.edit().remove("api_key").apply()
             }
 
             if (getApiKey().isBlank()) {
@@ -348,7 +357,7 @@ class MainActivity : AppCompatActivity() {
         val typed = apiKeyInput.text.toString().trim()
         if (typed.isNotBlank()) return typed
 
-        return prefs.getString("api_key", "").orEmpty()
+        return EncryptedApiKeyStore.get(this, "realmarket_api_key")
     }
 
     private fun fetchPrice() {
