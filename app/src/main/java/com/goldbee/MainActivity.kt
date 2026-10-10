@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.text.Editable
+import android.text.TextWatcher
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -154,6 +156,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var paperBalanceInput: EditText
     private lateinit var paperLotSizeInput: EditText
     private lateinit var paperContractSizeInput: EditText
+    private lateinit var paperLotValueText: TextView
     private lateinit var paperCommissionInput: EditText
     private var paperAccountCurrency: String = "USD"
     private var selectedPaperTpStyle: TakeProfitStyle = TakeProfitStyle.SMALL
@@ -677,7 +680,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(decision, "模拟账户参数", 14f, white, true)
         addLabel(
             decision,
-            "合约规格因经纪商而异。100 盎司/手只是常见默认假设，请先核对 MT5 品种规格；佣金 0 表示暂未计佣金。点差按 MT5 屏幕 Bid/Ask 模拟。",
+            "这里是模拟盈亏计算，不计算保证金或强平。100 盎司/手只是常见默认假设；请核对 MT5 品种规格。手数价值会按你输入的手数实时计算；佣金 0 表示暂未计佣金，点差按 MT5 屏幕 Bid/Ask 模拟。",
             11f,
             gold
         )
@@ -696,6 +699,23 @@ class MainActivity : AppCompatActivity() {
             "每手合约大小（盎司）"
         )
         decision.addView(paperContractSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperLotValueText = addLabel(
+            decision,
+            "手数价值计算：0.01 手 × 100 盎司/手 = 1 盎司。黄金价格每变动 $1.00，预计盈亏 $1.00；每变动 $0.10，预计盈亏 $0.10。此处不计算保证金。",
+            12f,
+            gold,
+            true
+        )
+        val lotValueWatcher = object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                refreshPaperLotValue()
+            }
+            override fun afterTextChanged(s: Editable?) = Unit
+        }
+        paperLotSizeInput.addTextChangedListener(lotValueWatcher)
+        paperContractSizeInput.addTextChangedListener(lotValueWatcher)
+        refreshPaperLotValue()
         paperCommissionInput = makeNumericInput(
             prefs.getString("paper_commission_round_turn", "0.00").orEmpty(),
             "每手往返佣金（USD）"
@@ -1561,6 +1581,28 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             null
         }
+    }
+
+    private fun refreshPaperLotValue() {
+        if (!::paperLotValueText.isInitialized) return
+        val lots = paperLotSizeInput.text.toString().trim().toDoubleOrNull()
+        val contract = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        if (lots == null || !lots.isFinite() || lots <= 0.0 ||
+            contract == null || !contract.isFinite() || contract <= 0.0
+        ) {
+            paperLotValueText.text = "手数价值计算：请填写有效的手数与每手合约大小。"
+            paperLotValueText.setTextColor(red)
+            return
+        }
+        val ounces = lots * contract
+        val oneDollarMove = ounces
+        paperLotValueText.text =
+            "手数价值：\${String.format(Locale.US, "%.2f", lots)} 手 × \${String.format(Locale.US, "%.2f", contract)} 盎司/手 = \${String.format(Locale.US, "%.4f", ounces)} 盎司黄金" +
+            "\n金价每变动 $0.10：约 \${fmtAccountMoney(oneDollarMove * 0.10)}" +
+            "\n金价每变动 $1.00：约 \${fmtAccountMoney(oneDollarMove)}" +
+            "\n金价每变动 $2.00：约 \${fmtAccountMoney(oneDollarMove * 2.0)} · $5.00：约 \${fmtAccountMoney(oneDollarMove * 5.0)}" +
+            "\n止损距离 $2.00：预计亏损约 \${fmtAccountMoney(oneDollarMove * 2.0)}（另计佣金；不计算保证金）"
+        paperLotValueText.setTextColor(gold)
     }
 
     private fun accountScale(): Double = if (paperAccountCurrency == "USC") 100.0 else 1.0
