@@ -103,7 +103,8 @@ class GoldPriceDevWebSocketClient(
             socket = null
             listener.onError(source, error.message ?: "无法创建行情 WebSocket")
             scheduleReconnect()
-            false
+            // Keep the client instance reachable so the user can cancel retries.
+            true
         }
     }
 
