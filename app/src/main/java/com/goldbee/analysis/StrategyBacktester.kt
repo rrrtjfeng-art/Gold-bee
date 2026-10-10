@@ -291,8 +291,8 @@ object StrategyBacktester {
         val wins = trades.count { it.rMultiple > 0.0 }
         val losses = trades.count { it.rMultiple < 0.0 }
         val totalR = trades.sumOf { it.rMultiple }
-        val grossProfit = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
-        val grossLoss = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
+        val netProfit = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
+        val netLoss = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
         var equity = 0.0
         var peak = 0.0
         var maxDrawdown = 0.0
@@ -311,7 +311,7 @@ object StrategyBacktester {
             grossTotalR = trades.sumOf { it.grossRMultiple },
             roundTripCostPrice = roundTripCostPrice,
             expectancyR = if (trades.isEmpty()) 0.0 else totalR / trades.size,
-            profitFactor = if (grossLoss > 0.0) grossProfit / grossLoss else null,
+            profitFactor = if (netLoss > 0.0) netProfit / netLoss else null,
             maxDrawdownR = maxDrawdown,
             sampleStartSeconds = start,
             sampleEndSeconds = end
