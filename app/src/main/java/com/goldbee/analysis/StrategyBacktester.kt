@@ -102,7 +102,10 @@ object StrategyBacktester {
     fun run(
         sourceCandles: Map<Timeframe, List<Candle>>,
         maxHoldBars: Int = 48,
-        roundTripCostPrice: Double = 0.0
+        roundTripCostPrice: Double = 0.0,
+        decisionConfig: MultiTimeframeDecisionConfig = MultiTimeframeDecisionConfig(),
+        decisionStartTimeSeconds: Long? = null,
+        decisionEndTimeSeconds: Long? = null
     ): BacktestResult {
         require(maxHoldBars > 0) { "maxHoldBars must be greater than zero" }
         validateSourceCandles(sourceCandles)
@@ -123,6 +126,13 @@ object StrategyBacktester {
         while (signalIndex < m5.lastIndex) {
             val signalCandle = m5[signalIndex]
             val decisionTime = signalCandle.timestamp + Timeframe.M5.seconds
+            if (decisionStartTimeSeconds != null && decisionTime < decisionStartTimeSeconds) {
+                signalIndex++
+                continue
+            }
+            if (decisionEndTimeSeconds != null && decisionTime > decisionEndTimeSeconds) {
+                break
+            }
 
             val visibleM15 = completedCandlesAtOrBefore(
                 candles = m15,
@@ -147,7 +157,7 @@ object StrategyBacktester {
                 Timeframe.H1 to visibleH1
             )
             val analysis = MultiTimeframeAnalyzer.analyze(visible)
-            val decision = MultiTimeframeDecisionEngine.decide(visible, analysis)
+            val decision = MultiTimeframeDecisionEngine.decide(visible, analysis, decisionConfig)
             val setup = decision.setup
             if (
                 (decision.action != DecisionAction.BUY && decision.action != DecisionAction.SELL) ||
