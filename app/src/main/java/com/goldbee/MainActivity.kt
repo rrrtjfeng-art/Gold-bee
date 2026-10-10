@@ -1258,10 +1258,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // Use closed candles for COPY evaluation; current Bid/Ask remains the
+        // live execution reference, but an unfinished bar must not decide direction.
         val candles = linkedMapOf(
-            Timeframe.M5 to mt5QuoteController.getCandles(Timeframe.M5),
-            Timeframe.M15 to mt5QuoteController.getCandles(Timeframe.M15),
-            Timeframe.H1 to mt5QuoteController.getCandles(Timeframe.H1)
+            Timeframe.M5 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M5),
+            Timeframe.M15 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M15),
+            Timeframe.H1 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.H1)
         )
         val analysis = try {
             MultiTimeframeAnalyzer.analyze(candles)
@@ -1280,9 +1282,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // A BUY is entered on Ask and a SELL on Bid. Use the executable side
+        // for chase-distance checks rather than the midpoint.
+        val executableSidePrice = if (signal.direction.name == "BUY") ask else bid
         val evaluation = CopySignalEvaluator.evaluate(
             signal = signal,
-            currentPrice = currentPrice,
+            currentPrice = executableSidePrice,
             analysis = analysis,
             candles = candles,
             spread = ask - bid
@@ -2231,10 +2236,12 @@ class MainActivity : AppCompatActivity() {
         if (now - lastLiveAnalysisQueuedAt < 1500L) return
         lastLiveAnalysisQueuedAt = now
 
+        // The live candle is still forming. Analyze only fully closed bars to
+        // prevent indicators and structure from changing mid-candle.
         val candleMap = linkedMapOf(
-            Timeframe.M5 to liveFeedController.getCandles(Timeframe.M5),
-            Timeframe.M15 to liveFeedController.getCandles(Timeframe.M15),
-            Timeframe.H1 to liveFeedController.getCandles(Timeframe.H1)
+            Timeframe.M5 to liveFeedController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M5),
+            Timeframe.M15 to liveFeedController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M15),
+            Timeframe.H1 to liveFeedController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.H1)
         )
 
         if (candleMap.values.any { it.size < 50 }) {
@@ -2412,10 +2419,12 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        // The decision engine is designed around closed candles. Keep the live
+        // MT5 quote separate from the candle history used for signal generation.
         val currentCandles = linkedMapOf(
-            Timeframe.M5 to mt5QuoteController.getCandles(Timeframe.M5),
-            Timeframe.M15 to mt5QuoteController.getCandles(Timeframe.M15),
-            Timeframe.H1 to mt5QuoteController.getCandles(Timeframe.H1)
+            Timeframe.M5 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M5),
+            Timeframe.M15 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.M15),
+            Timeframe.H1 to mt5QuoteController.getProcessor().getCandleAggregator().getClosedCandles(Timeframe.H1)
         )
         val analysis = try {
             MultiTimeframeAnalyzer.analyze(currentCandles)
