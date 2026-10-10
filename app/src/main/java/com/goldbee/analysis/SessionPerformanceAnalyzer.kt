@@ -95,11 +95,12 @@ object SessionPerformanceAnalyzer {
                         decisionEndTimeSeconds = end - 1
                     )
                     sessionTrades += dayResult.trades.filter { trade ->
-                        val hour = Instant.ofEpochSecond(trade.signalTimeSeconds)
+                        val decisionTime = trade.signalTimeSeconds + Timeframe.M5.seconds
+                        val hour = Instant.ofEpochSecond(decisionTime)
                             .atZone(malaysiaZone).hour
                         window.containsHour(hour) &&
-                            trade.signalTimeSeconds + Timeframe.M5.seconds >= start &&
-                            trade.signalTimeSeconds + Timeframe.M5.seconds < end
+                            decisionTime >= start &&
+                            decisionTime < end
                     }
                 }
             }
