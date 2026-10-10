@@ -91,7 +91,11 @@ object StrategyTrainer {
             } else {
                 // Penalize large historical drawdown slightly to avoid choosing
                 // solely by a volatile high-expectancy training result.
-                val researchScore = result.expectancyR - 0.05 * result.maxDrawdownR
+                // Expectancy remains primary; win rate is a secondary tie-breaker,
+                // so the trainer does not prefer a high-hit-rate strategy that loses money.
+                val researchScore = result.expectancyR -
+                    0.05 * result.maxDrawdownR +
+                    0.005 * (result.winRatePercent - 50.0)
                 Triple(config, result, researchScore)
             }
         }.sortedByDescending { it.third }
@@ -124,7 +128,7 @@ object StrategyTrainer {
         val note = if (chosen == null) {
             "训练段没有候选参数同时满足至少 10 笔交易、净期望为正、Profit Factor 大于 1；保留默认参数，不声称已找到优势。"
         } else {
-            "参数只按训练段中净期望为正且 Profit Factor 大于 1 的候选，再结合回撤惩罚选出；最终仍以未参与选择的样本外结果为准。"
+            "参数先要求训练段净期望为正、Profit Factor 大于 1 且至少 10 笔；排序以净期望为主，回撤为惩罚、胜率为次要因素。最终以未参与选择的样本外结果为准。"
         }
 
         return StrategyTrainingResult(
