@@ -158,10 +158,6 @@ object StrategyBacktester {
                 }
             }
 
-            val signedMove = when (setup.direction) {
-                TradeDirection.BUY -> exitPrice - entry
-                TradeDirection.SELL -> entry - exitPrice
-            }
             val grossRMultiple = calculateRMultiple(
                 direction = setup.direction,
                 entryPrice = entry,
@@ -193,7 +189,13 @@ object StrategyBacktester {
             signalIndex = exitIndex + 1
         }
 
-        return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp)
+        return result(
+            m5.size,
+            trades,
+            m5.firstOrNull()?.timestamp,
+            m5.lastOrNull()?.timestamp,
+            roundTripCostPrice
+        )
     }
 
     internal fun applyRoundTripCost(
