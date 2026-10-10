@@ -986,11 +986,11 @@ class MainActivity : AppCompatActivity() {
                 )
                 val rendered = buildString {
                     appendLine("实时结构参考 · 来源：GoldPrice.dev 现货流")
-                    appendLine("最新中间价：\${fmt(tick.midPrice)} · 点差：\${fmt(tick.spread)}")
-                    appendLine("M5：\${trendLabel(analysis.m5.structure.trend)} · M15：\${trendLabel(m15.structure.trend)} · H1：\${trendLabel(analysis.h1.structure.trend)}")
-                    appendLine("M15 EMA20：\${fmt(m15.indicators.ema20)} · RSI14：\${fmt(m15.indicators.rsi14)} · ATR14：\${fmt(m15.indicators.atr14)}")
-                    appendLine("支撑区：\${swing.supportZones.take(3).joinToString(" | ") { "\${fmt(it.low)}–\${fmt(it.high)}（\${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
-                    appendLine("阻力区：\${swing.resistanceZones.take(3).joinToString(" | ") { "\${fmt(it.low)}–\${fmt(it.high)}（\${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
+                    appendLine("最新中间价：${fmt(tick.midPrice)} · 点差：${fmt(tick.spread)}")
+                    appendLine("M5：${trendLabel(analysis.m5.structure.trend)} · M15：${trendLabel(m15.structure.trend)} · H1：${trendLabel(analysis.h1.structure.trend)}")
+                    appendLine("M15 EMA20：${fmt(m15.indicators.ema20)} · RSI14：${fmt(m15.indicators.rsi14)} · ATR14：${fmt(m15.indicators.atr14)}")
+                    appendLine("支撑区：${swing.supportZones.take(3).joinToString(" | ") { "${fmt(it.low)}–${fmt(it.high)}（${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
+                    appendLine("阻力区：${swing.resistanceZones.take(3).joinToString(" | ") { "${fmt(it.low)}–${fmt(it.high)}（${it.touches} 次触碰）" }.ifBlank { "尚未识别" }}")
                     appendLine()
                     append("限制：第三方现货报价可能与 MT5 经纪商报价和点差不同；这部分只显示结构偏向，不授权进场。")
                 }
@@ -1010,7 +1010,7 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     if (::liveFeedAnalysisText.isInitialized) {
                         liveFeedAnalysisText.text =
-                            "实时结构分析失败：\${error.message ?: "未知错误"}。保留 NO TRADE。"
+                            "实时结构分析失败：${error.message ?: "未知错误"}。保留 NO TRADE。"
                         liveFeedAnalysisText.setTextColor(gold)
                     }
                 }
