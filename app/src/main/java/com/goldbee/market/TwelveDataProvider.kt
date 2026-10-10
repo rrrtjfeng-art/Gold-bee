@@ -13,6 +13,11 @@ class TwelveDataProvider(
     private val symbol: String = "XAU/USD"
 ) : MarketDataProvider {
 
+    companion object {
+        private const val MAX_SOURCE_QUOTE_AGE_SECONDS = 10L
+        private const val MAX_FUTURE_TIMESTAMP_SECONDS = 3L
+    }
+
     private val client =
         OkHttpClient.Builder()
             .connectTimeout(
@@ -347,19 +352,31 @@ class TwelveDataProvider(
                     Double.NaN
                 )
 
-            if (
-                price.isNaN() ||
-                price <= 0.0
-            ) {
+            if (!price.isFinite() || price <= 0.0) {
                 return
             }
+
+            val nowSeconds =
+                System.currentTimeMillis() / 1000L
 
             val timestamp =
                 json.optLong(
                     "timestamp",
-                    System.currentTimeMillis()
-                        / 1000L
+                    nowSeconds
                 )
+
+            if (timestamp <= 0L) {
+                return
+            }
+
+            // Prevent an old upstream quote from being stamped as freshly received.
+            val sourceAgeSeconds = nowSeconds - timestamp
+            if (
+                sourceAgeSeconds > MAX_SOURCE_QUOTE_AGE_SECONDS ||
+                sourceAgeSeconds < -MAX_FUTURE_TIMESTAMP_SECONDS
+            ) {
+                return
+            }
 
             /*
              * 实时 tick。
