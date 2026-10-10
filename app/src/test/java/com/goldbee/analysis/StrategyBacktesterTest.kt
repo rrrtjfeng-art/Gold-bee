@@ -53,6 +53,45 @@ class StrategyBacktesterTest {
     }
 
     @Test
+    fun buyStopGapFillsAtWorseOpeningPrice() {
+        val candle = candle(high = 100.5, low = 96.0, open = 97.0, close = 98.0)
+        val fill = StrategyBacktester.resolveIntrabarExitFill(
+            direction = TradeDirection.BUY,
+            candle = candle,
+            stopLoss = 99.0,
+            takeProfit = 103.0
+        )
+        assertEquals(BacktestExitType.STOP_LOSS, fill?.first)
+        assertEquals(97.0, fill?.second ?: Double.NaN, 0.0)
+    }
+
+    @Test
+    fun sellStopGapFillsAtWorseOpeningPrice() {
+        val candle = candle(high = 104.0, low = 101.5, open = 103.0, close = 102.5)
+        val fill = StrategyBacktester.resolveIntrabarExitFill(
+            direction = TradeDirection.SELL,
+            candle = candle,
+            stopLoss = 102.0,
+            takeProfit = 98.0
+        )
+        assertEquals(BacktestExitType.STOP_LOSS, fill?.first)
+        assertEquals(103.0, fill?.second ?: Double.NaN, 0.0)
+    }
+
+    @Test
+    fun takeProfitGapDoesNotAssumePriceImprovement() {
+        val candle = candle(high = 106.0, low = 100.5, open = 105.0, close = 105.5)
+        val fill = StrategyBacktester.resolveIntrabarExitFill(
+            direction = TradeDirection.BUY,
+            candle = candle,
+            stopLoss = 99.0,
+            takeProfit = 103.0
+        )
+        assertEquals(BacktestExitType.TAKE_PROFIT, fill?.first)
+        assertEquals(103.0, fill?.second ?: Double.NaN, 0.0)
+    }
+
+    @Test
     fun emptyOrInsufficientHistoryCannotClaimStrategyPerformance() {
         val result = StrategyBacktester.run(emptyMap<Timeframe, List<Candle>>())
         assertTrue(result.trades.isEmpty())
