@@ -527,23 +527,29 @@ class MainActivity : AppCompatActivity() {
             setPadding(dp(18), dp(18), dp(18), dp(18))
             setBackgroundColor(Color.rgb(23, 31, 43))
         }
-        addLabel(homeCard, "交易首页 · 先看这里", 18f, white, true)
-        addLabel(homeCard, "模拟优先 · 你确认后才记录模拟交易 · 不会自动下真实订单", 11f, muted)
+        addLabel(homeCard, "黄金交易终端", 20f, white, true)
+        addLabel(homeCard, "XAUUSD · 黄金兑美元 · 先看信号，再看价格计划", 12f, muted)
         homeDecisionText = addLabel(homeCard, "WAIT", 34f, gold, true)
-        homeHintText = addLabel(homeCard, "还没有新分析。先加载历史 K 线，再读取 MT5 当前报价。", 13f, white)
+        homeHintText = addLabel(homeCard, "尚未分析。下面的 BUY / SELL 不是保证盈利的指令；先完成行情数据设置，再分析。", 13f, white)
         val chartToolbar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = android.view.Gravity.CENTER_VERTICAL
         }
         chartToolbar.addView(makeText("K 线图", 14f, white, true), LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(6) })
         listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).forEach { timeframe ->
-            val button = addButton(chartToolbar, timeframe.name, selectedChartTimeframe == timeframe) {
+            val timeframeLabel = when (timeframe) {
+                Timeframe.M5 -> "5分"
+                Timeframe.M15 -> "15分"
+                Timeframe.H1 -> "1小时"
+                else -> timeframe.name
+            }
+            val button = addButton(chartToolbar, timeframeLabel, selectedChartTimeframe == timeframe) {
                 selectedChartTimeframe = timeframe
                 terminalChartView.invalidate()
                 for (i in 0 until chartToolbar.childCount) {
                     val child = chartToolbar.getChildAt(i)
                     if (child is Button) {
-                        val selected = child.text.toString() == timeframe.name
+                        val selected = child.text.toString() == timeframeLabel
                         child.setTextColor(if (selected) bg else white)
                         child.backgroundTintList = android.content.res.ColorStateList.valueOf(
                             if (selected) gold else Color.rgb(42, 53, 70)
@@ -560,19 +566,25 @@ class MainActivity : AppCompatActivity() {
         homeCard.addView(terminalChartView, LinearLayout.LayoutParams(-1, dp(252)).apply {
             bottomMargin = dp(8)
         })
-        addLabel(homeCard, "图表使用已加载的历史 K 线；Entry / SL / TP 线会在有效信号生成后显示。报价延迟或数据不足时，不把图表当作实时交易依据。", 10f, muted)
+        addLabel(homeCard, "怎么看图：每根蜡烛代表一个时间段。绿色表示收盘高于开盘，红色表示收盘低于开盘。右侧是价格刻度，黄色线是 EMA9 趋势参考。图表来自已加载的历史数据，不等于实时行情。", 11f, white)
+        val chartHelpRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(chartHelpRow, "加载历史K线") { showTerminalPage("history") }
+        addButton(chartHelpRow, "设置行情数据") { showTerminalPage("settings") }
+        homeCard.addView(chartHelpRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
         val homePlan = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(12), dp(10), dp(12), dp(10))
             setBackgroundColor(Color.rgb(13, 18, 27))
         }
-        homePlanText = addLabel(homePlan, "进场参考：—\\n止损 SL：—\\n止盈 TP：—\\n风险回报：等待有效信号", 15f, white, true)
+        addLabel(homePlan, "交易计划（每次分析后更新）", 12f, muted, true)
+        homePlanText = addLabel(homePlan, "进场价 Entry：—\\n止损价 SL：—\\n止盈价 TP：—\\n潜在盈亏比：等待有效信号", 15f, white, true)
         homeCard.addView(homePlan, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
         val homeActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(homeActions, "分析当前报价", true) { analyzeRealFromMt5Screen() }
         addButton(homeActions, "刷新模拟账户") { refreshPaperTradeStatus() }
         homeCard.addView(homeActions)
-        addLabel(homeCard, "绿色＝BUY · 红色＝SELL · 黄色＝WAIT / 需要检查。计划价格是参考价；报价过期或错过进场时不要追价。", 11f, muted)
+        addLabel(homeCard, "新手先记住：BUY＝模型判断偏向买入；SELL＝模型判断偏向卖出；WAIT＝条件未齐；NO TRADE＝数据或风险不合格。它们都不是盈利保证。", 12f, white)
+        addLabel(homeCard, "Entry＝计划进场价；SL＝止损价，触及可能亏损；TP＝止盈目标价；盈亏比 1:2 表示计划风险 1 份、目标收益 2 份，实际结果仍会受点差与滑点影响。", 11f, muted)
         marketPage.addView(homeCard)
 
         val settings = makeCard()
@@ -1526,21 +1538,21 @@ class MainActivity : AppCompatActivity() {
             )
             val homeSetup = decision.setup
             homePlanText.text = if (homeSetup == null) {
-                "进场参考：—\\n止损 SL：—\\n止盈 TP：—\\n风险回报：当前没有可确认的交易计划"
+                "进场价 Entry：—\\n止损价 SL：—\\n止盈价 TP：—\\n潜在盈亏比：当前没有可确认的交易计划"
             } else {
                 String.format(
                     Locale.US,
-                    "进场参考：%.3f\\n止损 SL：%.3f\\n止盈 TP：%.3f\\n风险回报：1:%.2f",
+                    "进场价 Entry：%.3f\\n止损价 SL：%.3f\\n止盈价 TP：%.3f\\n潜在盈亏比：1:%.2f",
                     homeSetup.entry, homeSetup.stopLoss, homeSetup.takeProfit,
                     kotlin.math.abs(homeSetup.takeProfit - homeSetup.entry) /
                         kotlin.math.max(kotlin.math.abs(homeSetup.entry - homeSetup.stopLoss), 0.000001)
                 )
             }
             homeHintText.text = when (decision.action) {
-                DecisionAction.BUY -> "系统识别到买入条件。先核对 MT5 最新报价、点差和止损距离，再决定是否开模拟单。"
-                DecisionAction.SELL -> "系统识别到卖出条件。先核对 MT5 最新报价、点差和止损距离，再决定是否开模拟单。"
-                DecisionAction.WAIT -> "条件还不完整。等待比追价更好；没有信号不代表你错过了必赚机会。"
-                DecisionAction.NO_TRADE -> "当前数据或风险条件不合格。先解决原因，不要强行开仓。"
+                DecisionAction.BUY -> "偏向买入，但不代表一定会上涨。检查当前 MT5 报价、点差、止损和盈亏比；只有你确认后才记录模拟单。"
+                DecisionAction.SELL -> "偏向卖出，但不代表一定会下跌。检查当前 MT5 报价、点差、止损和盈亏比；只有你确认后才记录模拟单。"
+                DecisionAction.WAIT -> "暂时没有足够条件。不要为了想交易而硬进场；等新数据或下一次分析。"
+                DecisionAction.NO_TRADE -> "本次不允许给出进场计划。先看分析理由，检查数据是否缺失、过期或风险是否超标。"
             }
         }
         decisionText.setTextColor(
