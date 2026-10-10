@@ -1,29 +1,54 @@
-# Gold Bee TradingView companion indicator
+# Gold Bee TradingView tools
 
-File: `GoldBee_Swing_High_Low_SR.pine`
+Gold Bee is being built for a user who wants **clear, low-effort trading decisions**, not a chart full of indicators.
 
-## Add it to TradingView on a phone or computer
+## User requirements
 
-1. Open TradingView and open an XAUUSD chart.
-2. Open Pine Editor. If the mobile app does not expose Pine Editor, open TradingView in a browser/desktop view or use a desktop browser.
-3. Create a new indicator, replace the editor contents with `GoldBee_Swing_High_Low_SR.pine`, and save it.
-4. Add the indicator to the chart.
-5. Start with 3 left bars / 3 confirmation bars. Larger values show fewer, generally broader swings; smaller values show more noise.
-6. To receive alerts, create a TradingView alert and select one of this indicator's `Gold Bee` conditions. Alerts depend on TradingView's chart data and your alert configuration.
+- Focus on XAUUSD gold first; expand to other FX symbols only after gold is tested.
+- Short-term signals with explicit BUY / SELL / WAIT / NO TRADE decisions.
+- Show a reference entry, stop loss, take profit, reward/risk, and a plain-language reason.
+- Small, clearly stated targets matter (for example, a $2.00 XAUUSD price move). "Price move" is used rather than universal "pips" because brokers define gold points/pips differently.
+- Do not chase a missed signal; only use confirmed candles and do not invent an entry when conditions are missing.
+- Prefer fewer, better-filtered signals over constant trading.
+- Simulation and backtesting first. No automatic real orders.
+- Zero-budget approach; do not assume a paid server or paid data subscription.
 
-## What it shows
+## Files
 
-- Red downward markers: confirmed Swing Highs / potential resistance pivots.
-- Green upward markers: confirmed Swing Lows / potential support pivots.
-- Horizontal levels: nearby pivots are merged using ATR-based tolerance.
-- Repeated pivot touches make the level line thicker.
-- HH / HL / LH / LL labels show confirmed market structure.
-- TradingView alert conditions are available for confirmed swing points, structure shifts, and support/resistance breaks.
-- A level stops extending when a candle closes through it.
+- `GoldBee_Confirmed_Signals.pine`: strategy/backtest prototype for XAUUSD on M5.
+- `GoldBee_Swing_High_Low_SR.pine`: confirmed swing high/low and support/resistance companion indicator.
+- `GOLDPRICE_LIVE_FEED_SETUP.md`: notes on the separate gold-price provider adapter and its limitations.
 
-## Important limits
+## Confirmed signal strategy prototype
 
-- A pivot is only confirmed after the configured right-side candles form. The marker is drawn back on the pivot candle, but it was not knowable at that earlier time.
-- This is a custom companion indicator, not a TradingView feed integration and not a copy of a third-party paid indicator.
-- The Android Gold Bee app separately computes similar swing levels from its own candle provider. The data sources, candle close times, symbol suffixes, spread and timezone can differ, so levels may not match exactly.
-- Support and resistance are zones of interest, not guaranteed turning points or trade instructions. Confirm price freshness and risk before any manual MT5 order.
+The current prototype uses:
+- M5 chart only; the panel warns if another timeframe is selected.
+- M5 EMA trend alignment plus the last fully closed M15 trend filter.
+- RSI, directional movement / ADX, ATR range, and EMA crossover as entry filters.
+- Default target price move $2.00 and stop price move $1.50 for XAUUSD; default planned reward/risk is about 1.33R.
+- Three-bar cooldown and a maximum of six new trades per chart day.
+- Candle-close signals and dynamic alert messages containing symbol, reference entry, SL, TP, and reward/risk.
+- Strategy Tester simulation with a default commission/slippage assumption.
+
+These are **starting assumptions**, not optimized settings. The fixed target/stop are quote-price distances, not guaranteed cash profit. Actual cash P/L depends on broker contract size, lot size, spread, commission, swaps, and fills.
+
+## How to test
+
+1. Use a standard-candlestick XAUUSD chart on **5 minutes (M5)**, not Heikin Ashi, Renko, or other synthetic bars.
+2. Add `GoldBee_Confirmed_Signals.pine` as a strategy in TradingView's Pine Editor.
+3. Open Strategy Tester and record net profit, profit factor, maximum drawdown, total trades, win rate, and average trade after costs.
+4. Test more than one market period, including trend and range conditions. Do not tune settings on one period and assume they will work in the future.
+5. For alerts, choose **Any alert() function call**. Alerts depend on TradingView's plan, chart feed, and alert configuration.
+6. Compare the TradingView symbol and prices with the exact XAUUSD symbol in the user's MT5 broker before considering any signal actionable.
+
+## Important limitations
+
+- The script has been committed to GitHub but **has not yet been compiled in TradingView's Pine Editor or independently backtested**. No win rate or profitability claim is currently justified.
+- TradingView's strategy tester simulates trades; it is not the user's MT5 demo account and cannot place orders in the user's broker account.
+- TradingView's historical fills cannot perfectly reproduce real-time Bid/Ask spread, fast-market slippage, commissions, swaps, or broker-specific contract specifications.
+- A signal is a probability-based decision aid, not a guarantee. If the chart feed is stale, spread is too wide, or the price has moved away from the reference entry, the correct response is WAIT / NO TRADE rather than chasing.
+- No script can guarantee that the user never needs to understand risk. Gold Bee should hide indicator complexity, but it must show risk and never promise profits.
+
+## Existing swing/support-resistance indicator
+
+`GoldBee_Swing_High_Low_SR.pine` plots confirmed pivots and nearby support/resistance zones. Pivots only become known after the configured right-side confirmation bars; markers are drawn back on the pivot candle for visualization and must not be mistaken for signals available at that earlier time.
