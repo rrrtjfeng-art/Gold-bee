@@ -21,11 +21,13 @@ object WebSocketReconnectPolicy {
 
     fun shouldRetry(
         closeCode: Int? = null,
-        errorCode: String? = null
+        errorCode: String? = null,
+        httpStatusCode: Int? = null
     ): Boolean {
         if (closeCode != null && closeCode in terminalCloseCodes) return false
         if (closeCode == 1000) return false
         if (errorCode != null && errorCode.trim().lowercase() in terminalErrorCodes) return false
+        if (httpStatusCode == 401 || httpStatusCode == 403 || httpStatusCode == 429) return false
         return true
     }
 
