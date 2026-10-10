@@ -82,4 +82,39 @@ class PaperTradingEngineTest {
         assertEquals(4098.3, closed.trade.exitPrice!!, 0.000001)
         assertEquals(1.5, closed.trade.pnlPrice!!, 0.000001)
     }
+    @Test
+    fun netUsdPnlUsesLotContractAndRoundTripCommission() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now)
+        val opened = PaperTradingEngine.open(
+            signal = signal,
+            quote = quote(4099.8, 4100.2),
+            nowMillis = now,
+            maxEntryDistance = 1.0,
+            lotSize = 0.10,
+            contractSizeOunces = 100.0,
+            commissionPerLotRoundTurnUsd = 7.0
+        )
+        assertTrue(opened.accepted)
+        val closed = PaperTradingEngine.update(
+            opened.trade!!,
+            quote(4110.1, 4110.3, now + 1000),
+            now + 1000
+        )
+        assertEquals(9.8, closed.trade!!.pnlPrice!!, 0.000001)
+        assertEquals(97.3, closed.trade.pnlUsd!!, 0.000001)
+    }
+
+    @Test
+    fun invalidLotOrCommissionCannotOpenTrade() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now)
+        val invalidLot = PaperTradingEngine.open(
+            signal, quote(4099.8, 4100.2), now, 1.0, lotSize = 0.0
+        )
+        val invalidCommission = PaperTradingEngine.open(
+            signal, quote(4099.8, 4100.2), now, 1.0, commissionPerLotRoundTurnUsd = -1.0
+        )
+        assertFalse(invalidLot.accepted)
+        assertFalse(invalidCommission.accepted)
+    }
+
 }
