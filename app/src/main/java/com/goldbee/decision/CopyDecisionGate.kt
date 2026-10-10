@@ -14,6 +14,7 @@ data class CopyDecisionResult(
 object CopyDecisionGate {
 
     private const val MAX_ENTRY_DISTANCE_ATR = 0.35
+    private const val MAX_SPREAD_ATR_RATIO = 0.15
 
     fun evaluate(
         signal: CopySignal,
@@ -52,8 +53,12 @@ object CopyDecisionGate {
             analysis.m15.indicators.atr14
                 ?: return blocked("M15 ATR 不可用。")
 
-        if (atr <= 0.0) {
-            return blocked("ATR 无效。")
+        if (!atr.isFinite() || atr <= 0.0) {
+            return blocked("ATR 无效，禁止跟随复制信号。")
+        }
+
+        if (snapshot.spread > atr * MAX_SPREAD_ATR_RATIO) {
+            return blocked("当前点差相对 M15 ATR 过大，禁止跟随；等待点差收窄后重新审核。")
         }
 
         val maxDistance =
