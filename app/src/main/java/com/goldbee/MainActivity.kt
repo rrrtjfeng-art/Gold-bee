@@ -2413,7 +2413,7 @@ class MainActivity : AppCompatActivity() {
      * Compact MT5-style chart rendered from loaded OHLC candles.
      * The chart never fabricates candles: without historical data it shows a clear empty state.
      */
-    private inner class TerminalChartView : android.view.View {
+    private inner class TerminalChartView : android.view.View(this@MainActivity) {
         private val gridPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
             color = Color.rgb(35, 43, 56)
             strokeWidth = dp(1).toFloat()
