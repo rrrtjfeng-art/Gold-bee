@@ -2429,18 +2429,21 @@ class MainActivity : AppCompatActivity() {
                     appendLine("成本假设：每笔往返 ${fmt(result.validation.roundTripCostPrice)} 美元价格距离；0 表示没有扣成本")
                     appendLine()
                     appendLine(describe("训练段", result.training))
-                    appendLine(describe("样本外验证段", result.validation))
+                    appendLine(describe("样本外验证段（设定成本）", result.validation))
+                    appendLine(describe("样本外压力测试（往返成本 ×2）", result.validationDoubleCost))
                     appendLine()
                     appendLine(result.selectionNote)
-                    if (result.training.sampleIsTooSmall || result.validation.sampleIsTooSmall) {
+                    if (result.training.sampleIsTooSmall || result.validation.sampleIsTooSmall || result.validationDoubleCost.sampleIsTooSmall) {
                         appendLine("警告：至少一个阶段样本太少（少于 30 笔或覆盖不足 7 天）；暂时不能判断策略有稳定优势。")
                     }
                     if (result.validation.trades.size < 30) {
                         appendLine("样本外交易少于 30 笔。不要据此放大手数或转为实盘。")
-                    } else if (result.validation.expectancyR <= 0.0) {
-                        appendLine("样本外净期望不为正：当前参数没有通过这次验证，不应当作可用盈利信号。")
+                    } else if (result.validation.expectancyR <= 0.0 || (result.validation.profitFactor ?: 0.0) <= 1.0) {
+                        appendLine("样本外净期望不为正或 Profit Factor 不大于 1：当前参数未通过验证，不应当作可用盈利信号。")
+                    } else if (result.validationDoubleCost.expectancyR <= 0.0 || (result.validationDoubleCost.profitFactor ?: 0.0) <= 1.0) {
+                        appendLine("注意：设定成本下结果为正，但成本翻倍后优势消失；策略对交易成本敏感，不能据此放大手数。")
                     } else {
-                        appendLine("样本外净期望为正只是初步结果；仍需更多月份、不同波动环境和真实点差验证。")
+                        appendLine("设定成本和双倍成本下的样本外结果均为正，但仍需更多月份、不同波动环境和真实 Bid/Ask 验证。")
                     }
                     appendLine()
                     appendLine("回放限制：使用下一根 M5 开盘模拟进场；同一根 K 线同时触及 SL/TP 时按止损先发生。固定成本不能替代历史 Bid/Ask、动态点差、滑点和执行延迟。")
