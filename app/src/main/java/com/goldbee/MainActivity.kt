@@ -1702,6 +1702,12 @@ class MainActivity : AppCompatActivity() {
                 if (atrM5 == null || !atrM5.isFinite() || atrM5 <= 0.0) {
                     "M5 ATR 不可用，暂不计算 LIMIT/STOP 候选。"
                 } else {
+                    val recentM5 = latestCandles[Timeframe.M5].orEmpty().dropLast(1).takeLast(12)
+                    val breakoutLevel = if (setup.direction == TradeDirection.BUY) {
+                        recentM5.maxOfOrNull { it.high }
+                    } else {
+                        recentM5.minOfOrNull { it.low }
+                    }
                     listOf(false, true).mapNotNull { breakout ->
                         PendingOrderPlanner.plan(
                             direction = setup.direction,
@@ -1709,7 +1715,9 @@ class MainActivity : AppCompatActivity() {
                             atrM5 = atrM5,
                             structuralStop = setup.stopLoss,
                             structuralTarget = setup.takeProfit,
-                            preferBreakout = breakout
+                            preferBreakout = breakout,
+                            ema20Price = latestAnalysis?.m5?.indicators?.ema20,
+                            breakoutLevel = breakoutLevel
                         )
                     }.joinToString("\n") { order ->
                         String.format(
