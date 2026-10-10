@@ -905,7 +905,7 @@ class MainActivity : AppCompatActivity() {
             }
             String.format(
                 Locale.US,
-                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分置信度：%.0f%%\n原因：%s\n\n备选 TP（固定价格距离：小赚 +2 美元、中赚 +5 美元、大赚 +10 美元；每个目标按实际 SL 计算 R:R）：\n%s\nPips 暂按 1 pip = 0.1 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
+                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分（非胜率）：%.0f%%\n注意：该分数不是历史胜率或盈利概率，未经独立回测验证不能代表未来成功概率。\n原因：%s\n\n备选 TP（固定价格距离：小赚 +2 美元、中赚 +5 美元、大赚 +10 美元；每个目标按实际 SL 计算 R:R）：\n%s\nPips 暂按 1 pip = 0.1 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
                 decision.reason,
                 setup.entry,
                 setup.stopLoss,
