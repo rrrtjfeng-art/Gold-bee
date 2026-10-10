@@ -83,11 +83,11 @@ object PaperTradeMonitor {
         settings: android.content.SharedPreferences,
         trade: PaperTrade
     ) {
-        val pnl = trade.pnlPrice ?: return
+        val pnl = trade.pnlUsd ?: return
         val wins = settings.getInt("paper_wins", 0) + if (pnl > 0.0) 1 else 0
         val losses = settings.getInt("paper_losses", 0) + if (pnl < 0.0) 1 else 0
         val flats = settings.getInt("paper_flats", 0) + if (pnl == 0.0) 1 else 0
-        val total = settings.getFloat("paper_total_pnl_price", 0f).toDouble() + pnl
+        val total = settings.getFloat("paper_total_pnl_usd", 0f).toDouble() + pnl
         settings.edit()
             .putInt("paper_wins", wins)
             .putInt("paper_losses", losses)
@@ -120,6 +120,7 @@ object PaperTradeMonitor {
         nullable("exitTimestampMillis", trade.exitTimestampMillis)
         nullable("exitReason", trade.exitReason?.name)
         nullable("pnlPrice", trade.pnlPrice)
+        nullable("pnlUsd", trade.pnlUsd)
         settings.edit().putString(TRADE_KEY, json.toString()).apply()
     }
 
@@ -139,13 +140,17 @@ object PaperTradeMonitor {
             entryAsk = json.getDouble("entryAsk"),
             entryTimestampMillis = json.getLong("entryTimestampMillis"),
             source = json.optString("source", "UNKNOWN"),
+            lotSize = json.optDouble("lotSize", 0.01),
+            contractSizeOunces = json.optDouble("contractSizeOunces", 100.0),
+            commissionPerLotRoundTurnUsd = json.optDouble("commissionPerLotRoundTurnUsd", 0.0),
             status = PaperTradeStatus.valueOf(json.getString("status")),
             exitPrice = nullableDouble("exitPrice"),
             exitBid = nullableDouble("exitBid"),
             exitAsk = nullableDouble("exitAsk"),
             exitTimestampMillis = nullableLong("exitTimestampMillis"),
             exitReason = if (json.isNull("exitReason")) null else PaperExitReason.valueOf(json.getString("exitReason")),
-            pnlPrice = nullableDouble("pnlPrice")
+            pnlPrice = nullableDouble("pnlPrice"),
+            pnlUsd = nullableDouble("pnlUsd")
         )
     } catch (_: Exception) {
         null
