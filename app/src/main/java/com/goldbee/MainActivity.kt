@@ -347,7 +347,7 @@ class MainActivity : AppCompatActivity() {
 
         addLabel(
             root,
-            "注意：API Key 保存在本机应用设置中，但 Android 本地存储不是专业密钥保险库。不要把密钥提交到 GitHub。",
+            "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。",
             10f,
             muted
         )
