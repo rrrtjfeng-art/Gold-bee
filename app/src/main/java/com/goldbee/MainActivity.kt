@@ -3,6 +3,7 @@ package com.goldbee
 import android.graphics.Color
 import android.content.ComponentName
 import android.provider.Settings
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +14,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.MultiTimeframeAnalysis
@@ -95,6 +97,27 @@ class MainActivity : AppCompatActivity() {
         buildScreen()
     }
 
+    @Deprecated("Deprecated in Android API; retained for compatibility with the project target")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != SCREEN_CAPTURE_REQUEST_CODE) return
+        if (resultCode != RESULT_OK || data == null) {
+            if (::mt5ObservationText.isInitialized) {
+                mt5ObservationText.text = "屏幕 OCR 未获授权。没有开始捕获，也没有保存屏幕内容。"
+                mt5ObservationText.setTextColor(gold)
+            }
+            return
+        }
+        val serviceIntent = android.content.Intent(this, com.goldbee.mt5.Mt5ScreenCaptureService::class.java)
+            .putExtra(com.goldbee.mt5.Mt5ScreenCaptureService.EXTRA_RESULT_CODE, resultCode)
+            .putExtra(com.goldbee.mt5.Mt5ScreenCaptureService.EXTRA_RESULT_DATA, data)
+        ContextCompat.startForegroundService(this, serviceIntent)
+        if (::mt5ObservationText.isInitialized) {
+            mt5ObservationText.text = "屏幕 OCR 已获授权，正在启动本机文字识别。请切换到 MT5 图表；要停止时返回 Gold Bee 并点击“停止屏幕 OCR”。"
+            mt5ObservationText.setTextColor(green)
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         if (::mt5ObservationText.isInitialized) refreshMt5Observation()
@@ -136,9 +159,16 @@ class MainActivity : AppCompatActivity() {
                 ?.let { String.format(Locale.US, "%.3f", it) } ?: "未识别"
         }
         val ageSeconds = ((System.currentTimeMillis() - observedAt).coerceAtLeast(0L)) / 1000L
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+            .let { if (it == "SCREEN_OCR") "屏幕 OCR" else "无障碍文字读取" }
+        val ocrStatus = observation.getString(
+            com.goldbee.mt5.Mt5ScreenCaptureService.KEY_OCR_STATUS,
+            ""
+        ).orEmpty()
         val time = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(observedAt))
         mt5ObservationText.text = buildString {
-            appendLine("状态：已读取到 MT5 可访问文字（只读观察）")
+            appendLine("状态：已读取到屏幕文字（只读观察）· 来源：$source")
+            if (ocrStatus.isNotBlank()) appendLine("OCR 状态：$ocrStatus")
             appendLine("品种：${value(Mt5ScreenAccessibilityService.KEY_SYMBOL)} · 周期：${value(Mt5ScreenAccessibilityService.KEY_TIMEFRAME)}")
             appendLine("方向：${value(Mt5ScreenAccessibilityService.KEY_DIRECTION)}")
             appendLine("Entry：${price(Mt5ScreenAccessibilityService.KEY_ENTRY)} · SL：${price(Mt5ScreenAccessibilityService.KEY_SL)} · TP：${price(Mt5ScreenAccessibilityService.KEY_TP)}")
@@ -297,6 +327,26 @@ class MainActivity : AppCompatActivity() {
         }
         addButton(mt5Row, "刷新读取结果") { refreshMt5Observation() }
         mt5Card.addView(mt5Row)
+        val ocrRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(ocrRow, "开始屏幕 OCR", true) {
+            val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            @Suppress("DEPRECATION")
+            startActivityForResult(manager.createScreenCaptureIntent(), SCREEN_CAPTURE_REQUEST_CODE)
+        }
+        addButton(ocrRow, "停止屏幕 OCR") {
+            stopService(
+                android.content.Intent(this, com.goldbee.mt5.Mt5ScreenCaptureService::class.java)
+                    .setAction(com.goldbee.mt5.Mt5ScreenCaptureService.ACTION_STOP)
+            )
+            refreshMt5Observation()
+        }
+        mt5Card.addView(ocrRow)
+        addLabel(
+            mt5Card,
+            "屏幕 OCR 需要每次由你确认 Android 系统的屏幕共享提示。优先选择 MT5 应用窗口；识别只在本机处理，不保存截图或原始文字。",
+            10f,
+            muted
+        )
         root.addView(mt5Card)
         refreshMt5Observation()
 
@@ -765,5 +815,9 @@ class MainActivity : AppCompatActivity() {
         handler.removeCallbacks(pollRunnable)
         ioExecutor.shutdownNow()
         super.onDestroy()
+    }
+
+    companion object {
+        private const val SCREEN_CAPTURE_REQUEST_CODE = 7401
     }
 }
