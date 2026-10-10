@@ -87,6 +87,23 @@ class MarketFeedController(
         listener?.onConnectionStateChanged(connectionState)
     }
 
+    /**
+     * Seeds the local candle aggregator with verified historical candles before
+     * live ticks arrive. Live ticks can then update the current bar rather than
+     * building an indicator history from only a handful of recent prices.
+     */
+    @Synchronized
+    fun seedHistoricalCandles(
+        historical: Map<Timeframe, List<Candle>>
+    ) {
+        historical.forEach { (timeframe, candles) ->
+            processor.getCandleAggregator().setHistoricalCandles(
+                timeframe = timeframe,
+                historicalCandles = candles
+            )
+        }
+    }
+
     fun submitTick(tick: MarketTick): Boolean {
         if (!tick.isSymbol(symbol)) {
             listener?.onTickRejected(
