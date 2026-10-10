@@ -371,8 +371,50 @@ class MainActivity : AppCompatActivity() {
             text = value
             isAllCaps = false
             textSize = 12f
+            minHeight = dp(48)
+            minimumHeight = dp(48)
+            setPadding(dp(10), dp(8), dp(10), dp(8))
             setTextColor(if (primary) bg else white)
-            setBackgroundColor(if (primary) gold else Color.rgb(39, 46, 59))
+
+            // Use a stateful drawable instead of setBackgroundColor(), which removes
+            // Android's normal pressed feedback. A tap should be visibly acknowledged.
+            val normalColor = if (primary) gold else Color.rgb(42, 53, 70)
+            val pressedColor = if (primary) Color.rgb(255, 220, 92) else Color.rgb(76, 101, 137)
+            val disabledColor = Color.rgb(39, 43, 52)
+            val states = android.graphics.drawable.StateListDrawable().apply {
+                addState(
+                    intArrayOf(android.R.attr.state_enabled, android.R.attr.state_pressed),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(pressedColor)
+                        cornerRadius = dp(12).toFloat()
+                        setStroke(dp(2), if (primary) Color.rgb(255, 244, 190) else Color.rgb(135, 170, 220))
+                    }
+                )
+                addState(
+                    intArrayOf(-android.R.attr.state_enabled),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(disabledColor)
+                        cornerRadius = dp(12).toFloat()
+                    }
+                )
+                addState(
+                    intArrayOf(),
+                    android.graphics.drawable.GradientDrawable().apply {
+                        setColor(normalColor)
+                        cornerRadius = dp(12).toFloat()
+                        setStroke(dp(1), if (primary) Color.rgb(255, 221, 105) else Color.rgb(65, 79, 101))
+                    }
+                )
+            }
+            background = states
+            stateListAnimator = android.animation.StateListAnimator().apply {
+                val pressed = android.animation.ObjectAnimator.ofFloat(this@apply, "translationZ", dp(3).toFloat())
+                pressed.duration = 90L
+                val released = android.animation.ObjectAnimator.ofFloat(this@apply, "translationZ", 0f)
+                released.duration = 120L
+                addState(intArrayOf(android.R.attr.state_pressed), pressed)
+                addState(intArrayOf(), released)
+            }
             setOnClickListener { action() }
         }
         parent.addView(button, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
