@@ -10,7 +10,8 @@ strategy(
      slippage = 2
 )
 
-// Gold Bee's intended user experience: only BUY / SELL / WAIT plus exact plan prices.
+// Gold Bee research strategy: more active short-term signals, adjustable backtest quantity, and explicit plan prices.
+// Higher signal frequency can also mean more losing trades and costs. Quantity is TradingView symbol units, not a portable MT5 lot size.
 // This is a research strategy, not a guarantee. TradingView chart prices and simulated
 // fills can differ from the user's MT5 broker, spread, commissions and execution.
 
@@ -21,15 +22,16 @@ majorTrendLen = input.int(200, "M5 major EMA", minval = 50)
 rsiLen = input.int(14, "RSI length", minval = 2)
 diLen = input.int(14, "DI length", minval = 2)
 adxSmooth = input.int(14, "ADX smoothing", minval = 2)
-minimumAdx = input.float(18.0, "Minimum ADX", minval = 5, step = 0.5)
+minimumAdx = input.float(15.0, "Minimum ADX (lower = more signals)", minval = 5, step = 0.5)
 atrLen = input.int(14, "ATR length", minval = 2)
 targetMove = input.float(2.00, "Take profit price move ($ for XAUUSD)", minval = 0.10, step = 0.10)
 stopMove = input.float(1.50, "Stop loss price move ($ for XAUUSD)", minval = 0.10, step = 0.10)
 minimumRR = input.float(1.20, "Minimum reward/risk", minval = 1.0, step = 0.1)
 minAtr = input.float(0.35, "Minimum M5 ATR to trade", minval = 0.05, step = 0.05)
 maxAtr = input.float(4.00, "Maximum M5 ATR to trade", minval = 0.25, step = 0.25)
-cooldownBars = input.int(3, "Bars to wait after a signal", minval = 0, maxval = 50)
-maxTradesPerDay = input.int(6, "Maximum new trades per day", minval = 1, maxval = 30)
+cooldownBars = input.int(1, "Bars to wait after a signal", minval = 0, maxval = 50)
+maxTradesPerDay = input.int(20, "Maximum new trades per day", minval = 1, maxval = 50)
+simulatedQty = input.float(1.0, "Backtest order quantity (symbol units, NOT MT5 lots)", minval = 0.01, step = 0.01)
 allowLong = input.bool(true, "Enable BUY")
 allowShort = input.bool(true, "Enable SELL")
 
@@ -54,8 +56,8 @@ validVolatility = atrValue >= minAtr and atrValue <= maxAtr
 validRewardRisk = stopMove > 0 and targetMove / stopMove >= minimumRR
 trendUp = close > emaTrend and emaTrend > emaMajor and htfBull
 trendDown = close < emaTrend and emaTrend < emaMajor and htfBear
-momentumUp = rsiValue >= 52 and plusDI > minusDI
-momentumDown = rsiValue <= 48 and minusDI > plusDI
+momentumUp = rsiValue >= 50 and plusDI > minusDI
+momentumDown = rsiValue <= 50 and minusDI > plusDI
 marketMoving = adxValue >= minimumAdx
 crossUp = ta.crossover(emaFast, emaSlow)
 crossDown = ta.crossunder(emaFast, emaSlow)
@@ -89,7 +91,7 @@ if buySignal and strategy.position_size <= 0
     lastSignalBar := bar_index
     lastSignalBarShown := bar_index
     tradesToday += 1
-    strategy.entry("BUY", strategy.long, alert_message = "GOLD BEE BUY filled | {{ticker}} | {{interval}}")
+    strategy.entry("BUY", strategy.long, qty = simulatedQty, alert_message = "GOLD BEE BUY filled | {{ticker}} | {{interval}}")
     strategy.exit("BUY exit", from_entry = "BUY", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE BUY exit | {{ticker}} | {{interval}}")
     alert("GOLD BEE | BUY | " + syminfo.ticker + " | TF=M5 | Entry ref=" + str.tostring(plannedEntry, format.mintick) + " | SL=" + str.tostring(plannedSL, format.mintick) + " | TP=" + str.tostring(plannedTP, format.mintick) + " | RR=" + str.tostring(targetMove / stopMove, "#.##") + " | Confirmed candle close; verify broker quote/spread.", alert.freq_once_per_bar_close)
 
@@ -101,7 +103,7 @@ if sellSignal and strategy.position_size >= 0
     lastSignalBar := bar_index
     lastSignalBarShown := bar_index
     tradesToday += 1
-    strategy.entry("SELL", strategy.short, alert_message = "GOLD BEE SELL filled | {{ticker}} | {{interval}}")
+    strategy.entry("SELL", strategy.short, qty = simulatedQty, alert_message = "GOLD BEE SELL filled | {{ticker}} | {{interval}}")
     strategy.exit("SELL exit", from_entry = "SELL", stop = plannedSL, limit = plannedTP, alert_message = "GOLD BEE SELL exit | {{ticker}} | {{interval}}")
     alert("GOLD BEE | SELL | " + syminfo.ticker + " | TF=M5 | Entry ref=" + str.tostring(plannedEntry, format.mintick) + " | SL=" + str.tostring(plannedSL, format.mintick) + " | TP=" + str.tostring(plannedTP, format.mintick) + " | RR=" + str.tostring(targetMove / stopMove, "#.##") + " | Confirmed candle close; verify broker quote/spread.", alert.freq_once_per_bar_close)
 
