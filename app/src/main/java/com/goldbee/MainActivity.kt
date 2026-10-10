@@ -150,6 +150,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var homeDecisionText: TextView
     private lateinit var homePlanText: TextView
     private lateinit var homeHintText: TextView
+    private lateinit var marketPage: LinearLayout
+    private lateinit var tradePage: LinearLayout
+    private lateinit var historyPage: LinearLayout
+    private lateinit var settingsPage: LinearLayout
+    private val terminalNavButtons = linkedMapOf<String, Button>()
     private lateinit var paperTradeText: TextView
     private lateinit var paperTradeHistoryText: TextView
     private lateinit var paperTpStatusText: TextView
@@ -450,17 +455,50 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildScreen() {
-        val scroll = ScrollView(this).apply { setBackgroundColor(bg) }
+        val shell = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(bg)
+        }
+        val scroll = ScrollView(this).apply {
+            setBackgroundColor(bg)
+            isFillViewport = true
+        }
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(18), dp(16), dp(22))
+            setPadding(dp(14), dp(12), dp(14), dp(16))
         }
         scroll.addView(root)
-        setContentView(scroll)
+        shell.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        val bottomNav = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(dp(8), dp(6), dp(8), dp(8))
+            setBackgroundColor(Color.rgb(15, 20, 29))
+            elevation = dp(8).toFloat()
+        }
+        shell.addView(bottomNav, LinearLayout.LayoutParams(-1, -2))
+        setContentView(shell)
 
-        addLabel(root, "GOLD BEE", 27f, gold, true)
-        addLabel(root, "XAUUSD · MARKET ANALYSIS TERMINAL", 11f)
-        addLabel(root, "真实行情与历史技术分析测试版", 13f, white)
+        addLabel(root, "GOLD BEE", 24f, gold, true)
+        addLabel(root, "XAUUSD  ·  TRADING TERMINAL", 10f, muted)
+        marketPage = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        tradePage = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+        historyPage = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+        settingsPage = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; visibility = android.view.View.GONE }
+        root.addView(marketPage)
+        root.addView(tradePage)
+        root.addView(historyPage)
+        root.addView(settingsPage)
+
+        fun navItem(id: String, label: String) {
+            val button = addButton(bottomNav, label, false) { showTerminalPage(id) }
+            button.textSize = 11f
+            button.minHeight = dp(46)
+            terminalNavButtons[id] = button
+        }
+        navItem("market", "行情")
+        navItem("trade", "模拟交易")
+        navItem("history", "回测")
+        navItem("settings", "设置")
 
         // A clear first-screen summary: users should see the decision and plan before advanced settings.
         val homeCard = makeCard().apply {
@@ -483,7 +521,7 @@ class MainActivity : AppCompatActivity() {
         addButton(homeActions, "刷新模拟账户") { refreshPaperTradeStatus() }
         homeCard.addView(homeActions)
         addLabel(homeCard, "绿色＝BUY · 红色＝SELL · 黄色＝WAIT / 需要检查。计划价格是参考价；报价过期或错过进场时不要追价。", 11f, muted)
-        root.addView(homeCard)
+        marketPage.addView(homeCard)
 
         val settings = makeCard()
         addLabel(settings, "行情连接设置", 17f, white, true)
@@ -524,7 +562,7 @@ class MainActivity : AppCompatActivity() {
         }
         addButton(saveRow, "刷新参考数据") { fetchPrice() }
         settings.addView(saveRow)
-        root.addView(settings)
+        settingsPage.addView(settings)
 
         val liveFeedCard = makeCard()
         addLabel(liveFeedCard, "实时黄金行情连接（可选）", 17f, white, true)
@@ -591,7 +629,7 @@ class MainActivity : AppCompatActivity() {
             liveFeedStatusText.setTextColor(muted)
         }
         liveFeedCard.addView(liveFeedButtons)
-        root.addView(liveFeedCard)
+        settingsPage.addView(liveFeedCard)
 
         val statusCard = makeCard()
         addLabel(statusCard, "连接状态", 14f, muted, true)
@@ -614,7 +652,7 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "状态：已停止定时查询"
         }
         statusCard.addView(pollRow)
-        root.addView(statusCard)
+        marketPage.addView(statusCard)
 
         val quote = makeCard()
         addLabel(quote, "XAU / USD · REST参考数据（非实时）", 14f, muted, true)
@@ -623,7 +661,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(quote, "OHLC · 最近返回的 K 线", 12f, muted, true)
         candleText = addLabel(quote, "Open：—\nHigh：—\nLow：—\nClose：—", 13f, white)
         updateText = addLabel(quote, "数据时间：尚未获取", 11f, muted)
-        root.addView(quote)
+        marketPage.addView(quote)
 
         val mt5Card = makeCard()
         addLabel(mt5Card, "MT5 屏幕观察（只读）", 17f, white, true)
@@ -678,7 +716,7 @@ class MainActivity : AppCompatActivity() {
             10f,
             muted
         )
-        root.addView(mt5Card)
+        settingsPage.addView(mt5Card)
         refreshMt5Observation()
 
         val analysis = makeCard()
@@ -717,7 +755,7 @@ class MainActivity : AppCompatActivity() {
             12f,
             muted
         )
-        root.addView(analysis)
+        historyPage.addView(analysis)
 
         val decision = makeCard()
         addLabel(decision, "研究信号（未回测）", 17f, white, true)
@@ -834,7 +872,7 @@ class MainActivity : AppCompatActivity() {
         addButton(paperRow, "刷新报价并检查 SL/TP") { updatePaperTradeFromQuote() }
         decision.addView(paperRow)
         addButton(decision, "按当前报价手动平仓模拟单") { closePaperTradeManually() }
-        root.addView(decision)
+        tradePage.addView(decision)
         refreshPaperTradeStatus()
 
         val riskCard = makeCard()
@@ -876,7 +914,7 @@ class MainActivity : AppCompatActivity() {
             refreshRiskStatus()
         }
         riskCard.addView(riskRow)
-        root.addView(riskCard)
+        tradePage.addView(riskCard)
         refreshRiskStatus()
 
         val copyCard = makeCard()
@@ -901,9 +939,24 @@ class MainActivity : AppCompatActivity() {
         }
         copyCard.addView(copyRow)
         copyResultText = addLabel(copyCard, "等待审核。先加载 M5、M15、H1 历史数据，并确保 MT5 屏幕读取或 OCR 正在更新。行情过期或识别不全时会拒绝跟随。", 13f, white)
-        root.addView(copyCard)
+        tradePage.addView(copyCard)
 
-        addLabel(root, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
+        addLabel(settingsPage, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
+        showTerminalPage("market")
+    }
+
+    private fun showTerminalPage(page: String) {
+        marketPage.visibility = if (page == "market") android.view.View.VISIBLE else android.view.View.GONE
+        tradePage.visibility = if (page == "trade") android.view.View.VISIBLE else android.view.View.GONE
+        historyPage.visibility = if (page == "history") android.view.View.VISIBLE else android.view.View.GONE
+        settingsPage.visibility = if (page == "settings") android.view.View.VISIBLE else android.view.View.GONE
+        terminalNavButtons.forEach { (id, button) ->
+            val selected = id == page
+            button.setTextColor(if (selected) gold else white)
+            button.alpha = if (selected) 1f else 0.78f
+        }
+        val scroll = (marketPage.parent?.parent as? ScrollView)
+        scroll?.smoothScrollTo(0, 0)
     }
 
     private fun makeSecretInput(hintText: String): EditText = EditText(this).apply {
