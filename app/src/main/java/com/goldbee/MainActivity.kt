@@ -157,6 +157,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var paperLotSizeInput: EditText
     private lateinit var paperContractSizeInput: EditText
     private lateinit var paperLotValueText: TextView
+    private lateinit var paperGoldPriceInput: EditText
+    private lateinit var paperLeverageText: TextView
+    private var paperLeverage: Int = 2000
     private lateinit var paperCommissionInput: EditText
     private var paperAccountCurrency: String = "USD"
     private var selectedPaperTpStyle: TakeProfitStyle = TakeProfitStyle.SMALL
@@ -680,7 +683,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(decision, "模拟账户参数", 14f, white, true)
         addLabel(
             decision,
-            "这里是模拟盈亏计算，不计算保证金或强平。100 盎司/手只是常见默认假设；请核对 MT5 品种规格。手数价值会按你输入的手数实时计算；佣金 0 表示暂未计佣金，点差按 MT5 屏幕 Bid/Ask 模拟。",
+            "USD 与杠杆计算：按 XAUUSD 每手 100 盎司的常见规格估算；可修改黄金价格、手数和杠杆。这里显示名义价值与理论保证金，不代表经纪商实际保证金规则。",
             11f,
             gold
         )
@@ -699,9 +702,30 @@ class MainActivity : AppCompatActivity() {
             "每手合约大小（盎司）"
         )
         decision.addView(paperContractSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperGoldPriceInput = makeNumericInput(
+            prefs.getString("paper_gold_price_usd", "4000.00").orEmpty(),
+            "参考金价 USD/盎司，例如 4000.00"
+        )
+        decision.addView(paperGoldPriceInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        val leverageRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(2000, 3000, 5000, 10000).forEach { leverage ->
+            addButton(leverageRow, "1:$leverage", paperLeverage == leverage) {
+                paperLeverage = leverage
+                prefs.edit().putInt("paper_leverage", leverage).apply()
+                refreshPaperLotValue()
+                for (i in 0 until leverageRow.childCount) {
+                    (leverageRow.getChildAt(i) as? Button)?.let { button ->
+                        button.setBackgroundColor(if (button.text.toString() == "1:$leverage") gold else Color.rgb(39, 46, 59))
+                        button.setTextColor(if (button.text.toString() == "1:$leverage") bg else white)
+                    }
+                }
+            }
+        }
+        decision.addView(leverageRow)
+        paperLeverageText = addLabel(decision, "当前模拟杠杆：1:2000", 12f, white, true)
         paperLotValueText = addLabel(
             decision,
-            "手数价值计算：0.01 手 × 100 盎司/手 = 1 盎司。黄金价格每变动 $1.00，预计盈亏 $1.00；每变动 $0.10，预计盈亏 $0.10。此处不计算保证金。",
+            "USD 计算：0.01 手 × 100 盎司/手 = 1 盎司；名义价值 = 金价 × 1 盎司；理论保证金 = 名义价值 ÷ 杠杆。",
             12f,
             gold,
             true
@@ -713,8 +737,11 @@ class MainActivity : AppCompatActivity() {
             }
             override fun afterTextChanged(s: Editable?) = Unit
         }
+        paperLeverage = prefs.getInt("paper_leverage", 2000).takeIf { it in setOf(2000, 3000, 5000, 10000) } ?: 2000
         paperLotSizeInput.addTextChangedListener(lotValueWatcher)
         paperContractSizeInput.addTextChangedListener(lotValueWatcher)
+        paperGoldPriceInput.addTextChangedListener(lotValueWatcher)
+        paperBalanceInput.addTextChangedListener(lotValueWatcher)
         refreshPaperLotValue()
         paperCommissionInput = makeNumericInput(
             prefs.getString("paper_commission_round_turn", "0.00").orEmpty(),
@@ -1587,21 +1614,45 @@ class MainActivity : AppCompatActivity() {
         if (!::paperLotValueText.isInitialized) return
         val lots = paperLotSizeInput.text.toString().trim().toDoubleOrNull()
         val contract = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        val price = paperGoldPriceInput.text.toString().trim().toDoubleOrNull()
+        val balance = paperBalanceInput.text.toString().trim().toDoubleOrNull()
         if (lots == null || !lots.isFinite() || lots <= 0.0 ||
-            contract == null || !contract.isFinite() || contract <= 0.0
+            contract == null || !contract.isFinite() || contract <= 0.0 ||
+            price == null || !price.isFinite() || price <= 0.0
         ) {
-            paperLotValueText.text = "手数价值计算：请填写有效的手数与每手合约大小。"
+            paperLotValueText.text = "USD/杠杆计算：请填写有效的手数、合约大小和参考金价。"
             paperLotValueText.setTextColor(red)
+            if (::paperLeverageText.isInitialized) paperLeverageText.text = "当前模拟杠杆：1:${paperLeverage}"
             return
         }
         val ounces = lots * contract
-        val oneDollarMove = ounces
+        val notionalUsd = ounces * price
+        val marginUsd = notionalUsd / paperLeverage.toDouble()
+        val move01Usd = ounces * 0.10
+        val move1Usd = ounces
+        val move2Usd = ounces * 2.0
+        val move5Usd = ounces * 5.0
+        val balanceUsd = balance?.takeIf { it.isFinite() && it >= 0.0 }?.let {
+            if (paperAccountCurrency == "USC") it / 100.0 else it
+        }
+        val balanceLine = if (balanceUsd == null) {
+            "模拟余额：未填写有效金额"
+        } else {
+            "模拟余额：${String.format(Locale.US, "%.2f USD", balanceUsd)}" +
+                " · 理论保证金占余额 ${if (balanceUsd > 0.0) String.format(Locale.US, "%.2f%%", marginUsd / balanceUsd * 100.0) else "无法计算"}"
+        }
+        paperLeverageText.text = "当前模拟杠杆：1:${paperLeverage}"
         paperLotValueText.text =
-            "手数价值：${String.format(Locale.US, "%.2f", lots)} 手 × ${String.format(Locale.US, "%.2f", contract)} 盎司/手 = ${String.format(Locale.US, "%.4f", ounces)} 盎司黄金" +
-            "\n金价每变动 $0.10：约 ${fmtAccountMoney(oneDollarMove * 0.10)}" +
-            "\n金价每变动 $1.00：约 ${fmtAccountMoney(oneDollarMove)}" +
-            "\n金价每变动 $2.00：约 ${fmtAccountMoney(oneDollarMove * 2.0)} · $5.00：约 ${fmtAccountMoney(oneDollarMove * 5.0)}" +
-            "\n止损距离 $2.00：预计亏损约 ${fmtAccountMoney(oneDollarMove * 2.0)}（另计佣金；不计算保证金）"
+            "计算假设：XAUUSD $ ${String.format(Locale.US, "%.2f", price)}/盎司 · ${String.format(Locale.US, "%.2f", contract)} 盎司/手" +
+            "\n手数：${String.format(Locale.US, "%.2f", lots)} 手 = ${String.format(Locale.US, "%.4f", ounces)} 盎司黄金" +
+            "\n名义仓位价值：$ ${String.format(Locale.US, "%,.2f", notionalUsd)} USD（${String.format(Locale.US, "%.4f", ounces)} 盎司 × $ ${String.format(Locale.US, "%.2f", price)}）" +
+            "\n1:${paperLeverage} 理论保证金：$ ${String.format(Locale.US, "%,.2f", marginUsd)} USD（名义价值 ÷ ${paperLeverage}）" +
+            "\n$balanceLine" +
+            "\n金价变动 $0.10：盈亏约 $ ${String.format(Locale.US, "%.2f", move01Usd)} USD" +
+            "\n金价变动 $1.00：盈亏约 $ ${String.format(Locale.US, "%.2f", move1Usd)} USD" +
+            "\n金价变动 $2.00：盈亏约 $ ${String.format(Locale.US, "%.2f", move2Usd)} USD · $5.00：约 $ ${String.format(Locale.US, "%.2f", move5Usd)} USD" +
+            "\n止损距离 $2.00：预计亏损约 $ ${String.format(Locale.US, "%.2f", move2Usd)} USD，另计佣金与滑点。" +
+            "\n注意：杠杆改变保证金，不改变同样手数的价格盈亏；实际保证金以经纪商 XAUUSD 合约规则为准。"
         paperLotValueText.setTextColor(gold)
     }
 
