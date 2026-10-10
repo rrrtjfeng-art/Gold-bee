@@ -838,7 +838,8 @@ class MainActivity : AppCompatActivity() {
             signal = signal,
             currentPrice = currentPrice,
             analysis = analysis,
-            candles = candles
+            candles = candles,
+            spread = ask - bid
         )
         if (evaluation.action.name == "NO_TRADE") {
             copyResultText.setTextColor(red)
