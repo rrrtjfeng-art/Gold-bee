@@ -31,4 +31,6 @@ dependencies {
 
     // OkHttp：实时 WebSocket 网络连接
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation("junit:junit:4.13.2")
 }
