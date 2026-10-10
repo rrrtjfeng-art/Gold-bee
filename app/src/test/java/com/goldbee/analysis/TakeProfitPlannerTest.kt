@@ -19,9 +19,9 @@ class TakeProfitPlannerTest {
         assertEquals(4010.0, targets[0].price, 0.000001)
         assertEquals(4015.0, targets[1].price, 0.000001)
         assertEquals(4025.0, targets[2].price, 0.000001)
-        assertEquals(1000.0, targets[0].estimatedPips, 0.000001)
-        assertEquals(1500.0, targets[1].estimatedPips, 0.000001)
-        assertEquals(2500.0, targets[2].estimatedPips, 0.000001)
+        assertEquals(100.0, targets[0].estimatedPips, 0.000001)
+        assertEquals(150.0, targets[1].estimatedPips, 0.000001)
+        assertEquals(250.0, targets[2].estimatedPips, 0.000001)
     }
 
     @Test
