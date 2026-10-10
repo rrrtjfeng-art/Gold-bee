@@ -24,6 +24,7 @@ import com.goldbee.market.HistoricalCandleProvider
 import com.goldbee.market.MarketSnapshot
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
+import com.goldbee.market.SourceQuoteTimestamp
 import com.goldbee.market.Timeframe
 import com.goldbee.settings.ApiKeyStore
 import com.goldbee.settings.EncryptedApiKeyStore
@@ -65,6 +66,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastQuotePrice: Double? = null
     @Volatile private var latestQuote: RealMarketPrice? = null
     @Volatile private var lastQuoteReceivedAt: Long = 0L
+    @Volatile private var lastQuoteSourceTimestamp: Long? = null
     private var polling = false
     private var requestInProgress = false
     private val pollInterval = 10 * 60 * 1000L
@@ -358,9 +360,12 @@ class MainActivity : AppCompatActivity() {
 
         val currentPrice = lastQuotePrice
         val quoteAge = System.currentTimeMillis() - lastQuoteReceivedAt
-        if (currentPrice == null || currentPrice <= 0.0 || quoteAge !in 0L..30_000L) {
+        if (currentPrice == null || !currentPrice.isFinite() || currentPrice <= 0.0 ||
+            quoteAge !in 0L..30_000L ||
+            !SourceQuoteTimestamp.isFresh(lastQuoteSourceTimestamp)
+        ) {
             copyResultText.setTextColor(red)
-            copyResultText.text = "NO TRADE：报价不存在或已超过 30 秒。先点击“刷新报价”，再审核信号。"
+            copyResultText.text = "NO TRADE：报价不存在、来源时间无法验证或行情 K 线已超过允许时效。刷新报价后重试；来源时间无法验证时不能跟随。"
             return
         }
 
@@ -422,6 +427,17 @@ class MainActivity : AppCompatActivity() {
         client.fetchPrice(apiKey = key, symbol = "XAUUSD", timeframe = "M1") { result ->
             result.onSuccess { quote ->
                 showPrice(quote)
+                if (!SourceQuoteTimestamp.isFresh(lastQuoteSourceTimestamp)) {
+                    showDecision(
+                        DecisionResult(
+                            action = DecisionAction.NO_TRADE,
+                            setup = null,
+                            confidence = 0.0,
+                            reason = "NO TRADE：行情来源时间无法验证或对应 K 线超过 90 秒。不能把本机收到响应的时间当成市场报价时间。"
+                        )
+                    )
+                    return@onSuccess
+                }
                 val bid = quote.bid
                 val ask = quote.ask
                 if (bid == null || ask == null) {
@@ -439,7 +455,7 @@ class MainActivity : AppCompatActivity() {
                         symbol = quote.symbol,
                         bid = bid,
                         ask = ask,
-                        timestamp = receivedAt,
+                        timestamp = lastQuoteSourceTimestamp ?: 0L,
                         candles = candles,
                         source = "RealMarketAPI",
                         receivedAt = receivedAt
@@ -539,6 +555,7 @@ class MainActivity : AppCompatActivity() {
         latestQuote = q
         lastQuotePrice = q.close
         lastQuoteReceivedAt = System.currentTimeMillis()
+        lastQuoteSourceTimestamp = SourceQuoteTimestamp.parseMillis(q.openTime)
         statusText.text = "状态：已取得实时行情响应"
         statusText.setTextColor(green)
         priceText.text = String.format(Locale.US, "%.2f", q.close)
