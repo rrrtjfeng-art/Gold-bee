@@ -1157,6 +1157,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun analyzeRealFromMt5Screen() {
         pendingPaperSignal = null
+        pendingRealSignalBase = null
+        updatePendingRealTakeProfit()
         val now = System.currentTimeMillis()
         val observation = getSharedPreferences(
             Mt5ScreenAccessibilityService.PREFS_NAME,
