@@ -24,7 +24,7 @@ object CopySignalEvaluator {
         currentPrice: Double,
         analysis: MultiTimeframeAnalysis,
         candles: Map<Timeframe, List<Candle>>,
-        spread: Double = 0.0
+        spread: Double
     ): CopySignalEvaluation {
 
         if (!currentPrice.isFinite() || currentPrice <= 0.0) {
