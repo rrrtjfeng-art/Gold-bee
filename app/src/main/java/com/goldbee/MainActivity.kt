@@ -234,7 +234,7 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         handler.removeCallbacks(observerRefreshRunnable)
         handler.removeCallbacks(liveFeedHealthRunnable)
-        super.onPause
+        super.onPause()
     }
 
     private fun refreshMt5Observation() {
