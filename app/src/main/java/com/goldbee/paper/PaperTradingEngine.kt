@@ -108,16 +108,21 @@ object PaperTradingEngine {
 
         val risk = abs(entry - signal.stopLoss)
         val reward = abs(signal.takeProfit - entry)
-        val netReward = reward - quote.spread
-        val netRisk = risk + quote.spread
-        val netRiskReward = netReward / netRisk
-        if (!risk.isFinite() || !reward.isFinite() || !netReward.isFinite() ||
-            !netRisk.isFinite() || risk <= 0.0 || netReward <= 0.0 ||
-            !netRiskReward.isFinite() || netRiskReward < minimumRiskReward
+        // Entry already uses the executable side of the MT5 quote (BUY=Ask, SELL=Bid),
+        // so do not subtract spread a second time. Model commission separately in USD.
+        val netRewardUsd = reward * contractSizeOunces * lotSize -
+            commissionPerLotRoundTurnUsd * lotSize
+        val netRiskUsd = risk * contractSizeOunces * lotSize +
+            commissionPerLotRoundTurnUsd * lotSize
+        val netRiskReward = netRewardUsd / netRiskUsd
+        if (!risk.isFinite() || !reward.isFinite() || !netRewardUsd.isFinite() ||
+            !netRiskUsd.isFinite() || risk <= 0.0 || netRewardUsd <= 0.0 ||
+            netRiskUsd <= 0.0 || !netRiskReward.isFinite() ||
+            netRiskReward < minimumRiskReward
         ) {
             return PaperTradeAttempt(
                 null,
-                "计入当前 MT5 点差后净盈亏比不足最低要求 ${String.format(java.util.Locale.US, "%.2f", minimumRiskReward)}；请选择更合适的 TP 或放弃交易。"
+                "按实际 MT5 进场侧报价并计入往返佣金后，净盈亏比低于最低要求 ${String.format(java.util.Locale.US, "%.2f", minimumRiskReward)}；请选择更合适的 TP 或放弃交易。"
             )
         }
 
