@@ -15,6 +15,7 @@ object CopyDecisionGate {
 
     private const val MAX_ENTRY_DISTANCE_ATR = 0.35
     private const val MAX_SPREAD_ATR_RATIO = 0.15
+    private const val MIN_NET_RISK_REWARD = 1.5
 
     fun evaluate(
         signal: CopySignal,
@@ -24,6 +25,12 @@ object CopyDecisionGate {
 
         if (!snapshot.isPriceValid()) {
             return blocked("当前行情价格无效。")
+        }
+
+        if (snapshot.source.contains("Twelve Data", ignoreCase = true)) {
+            return blocked(
+                "当前行情源只有参考价，没有真实 bid/ask 点差；无法评估复制信号的净盈亏比，禁止跟随。请使用具备真实买卖报价的行情源。"
+            )
         }
 
         if (!snapshot.isFresh()) {
@@ -108,6 +115,32 @@ object CopyDecisionGate {
 
         if (!setup.isValid()) {
             return blocked("复制信号的交易方案无效。")
+        }
+
+        // Screen the signal on estimated reward after spread, not gross chart distances alone.
+        val stopDistance = abs(setup.entry - setup.stopLoss)
+        val targetDistance = abs(setup.takeProfit - setup.entry)
+        val netReward = targetDistance - snapshot.spread
+        val netRisk = stopDistance + snapshot.spread
+
+        if (
+            !netReward.isFinite() ||
+            !netRisk.isFinite() ||
+            netReward <= 0.0 ||
+            netRisk <= 0.0
+        ) {
+            return blocked("扣除点差后，复制信号没有有效的净风险收益。")
+        }
+
+        val estimatedNetRiskReward = netReward / netRisk
+        if (
+            !estimatedNetRiskReward.isFinite() ||
+            estimatedNetRiskReward < MIN_NET_RISK_REWARD
+        ) {
+            return blocked(
+                "复制信号扣除点差估算后净盈亏比仅 %.2f，低于最低要求 %.2f，拒绝跟随。"
+                    .format(estimatedNetRiskReward, MIN_NET_RISK_REWARD)
+            )
         }
 
         val reason =
