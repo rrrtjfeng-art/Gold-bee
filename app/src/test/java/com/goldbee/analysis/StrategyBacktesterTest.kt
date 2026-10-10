@@ -120,6 +120,37 @@ class StrategyBacktesterTest {
     }
 
     @Test
+    fun roundTripPriceCostReducesGrossRForWinsAndLosses() {
+        assertEquals(
+            1.7,
+            StrategyBacktester.applyRoundTripCost(
+                grossRMultiple = 2.0,
+                risk = 1.0,
+                roundTripCostPrice = 0.30
+            ),
+            0.000001
+        )
+        assertEquals(
+            -1.3,
+            StrategyBacktester.applyRoundTripCost(
+                grossRMultiple = -1.0,
+                risk = 1.0,
+                roundTripCostPrice = 0.30
+            ),
+            0.000001
+        )
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun rejectsNegativeRoundTripCost() {
+        StrategyBacktester.applyRoundTripCost(
+            grossRMultiple = 1.0,
+            risk = 1.0,
+            roundTripCostPrice = -0.01
+        )
+    }
+
+    @Test
     fun emptyOrInsufficientHistoryCannotClaimStrategyPerformance() {
         val result = StrategyBacktester.run(emptyMap<Timeframe, List<Candle>>())
         assertTrue(result.trades.isEmpty())
