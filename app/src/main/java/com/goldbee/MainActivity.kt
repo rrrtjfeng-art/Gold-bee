@@ -1597,11 +1597,11 @@ class MainActivity : AppCompatActivity() {
         val ounces = lots * contract
         val oneDollarMove = ounces
         paperLotValueText.text =
-            "手数价值：\${String.format(Locale.US, "%.2f", lots)} 手 × \${String.format(Locale.US, "%.2f", contract)} 盎司/手 = \${String.format(Locale.US, "%.4f", ounces)} 盎司黄金" +
-            "\n金价每变动 $0.10：约 \${fmtAccountMoney(oneDollarMove * 0.10)}" +
-            "\n金价每变动 $1.00：约 \${fmtAccountMoney(oneDollarMove)}" +
-            "\n金价每变动 $2.00：约 \${fmtAccountMoney(oneDollarMove * 2.0)} · $5.00：约 \${fmtAccountMoney(oneDollarMove * 5.0)}" +
-            "\n止损距离 $2.00：预计亏损约 \${fmtAccountMoney(oneDollarMove * 2.0)}（另计佣金；不计算保证金）"
+            "手数价值：${String.format(Locale.US, "%.2f", lots)} 手 × ${String.format(Locale.US, "%.2f", contract)} 盎司/手 = ${String.format(Locale.US, "%.4f", ounces)} 盎司黄金" +
+            "\n金价每变动 $0.10：约 ${fmtAccountMoney(oneDollarMove * 0.10)}" +
+            "\n金价每变动 $1.00：约 ${fmtAccountMoney(oneDollarMove)}" +
+            "\n金价每变动 $2.00：约 ${fmtAccountMoney(oneDollarMove * 2.0)} · $5.00：约 ${fmtAccountMoney(oneDollarMove * 5.0)}" +
+            "\n止损距离 $2.00：预计亏损约 ${fmtAccountMoney(oneDollarMove * 2.0)}（另计佣金；不计算保证金）"
         paperLotValueText.setTextColor(gold)
     }
 
