@@ -2852,12 +2852,47 @@ class MainActivity : AppCompatActivity() {
                 signal?.plannedEntry?.let { Triple(it, "ENTRY", gold) },
                 signal?.stopLoss?.let { Triple(it, "SL", red) }
             )
-            val allValues = candles.flatMap { listOf(it.low, it.high) } + levels.map { it.first }
+            val fullSeries = latestCandles[selectedChartTimeframe].orEmpty()
+            val chartAtr = when (selectedChartTimeframe) {
+                Timeframe.M5 -> latestAnalysis?.m5?.indicators?.atr14
+                Timeframe.M15 -> latestAnalysis?.m15?.indicators?.atr14
+                Timeframe.H1 -> latestAnalysis?.h1?.indicators?.atr14
+            }
+            val structureZones = if (fullSeries.size >= 10) {
+                runCatching {
+                    SwingSupportResistanceAnalyzer.analyze(
+                        candles = fullSeries,
+                        leftBars = 3,
+                        rightBars = 3,
+                        currentPrice = fullSeries.lastOrNull()?.close,
+                        atr = chartAtr
+                    )
+                }.getOrNull()?.let { listOfNotNull(it.nearestSupport, it.nearestResistance) }.orEmpty()
+            } else emptyList()
+            val zoneValues = structureZones.flatMap { listOf(it.low, it.high) }
+            val allValues = candles.flatMap { listOf(it.low, it.high) } + levels.map { it.first } + zoneValues
             val minPrice = (allValues.minOrNull() ?: lowValue) - ((highValue - lowValue).coerceAtLeast(0.01) * 0.08)
             val maxPrice = (allValues.maxOrNull() ?: highValue) + ((highValue - lowValue).coerceAtLeast(0.01) * 0.08)
             val priceRange = (maxPrice - minPrice).coerceAtLeast(0.01)
             fun yOf(price: Double): Float = bottom - ((price - minPrice) / priceRange).toFloat() * (bottom - top)
 
+            structureZones.forEach { zone ->
+                val isSupport = zone.kind == com.goldbee.analysis.SwingKind.SUPPORT
+                val zoneColor = if (isSupport) Color.rgb(55, 150, 205) else Color.rgb(230, 135, 55)
+                val fillPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+                    color = Color.argb(28, Color.red(zoneColor), Color.green(zoneColor), Color.blue(zoneColor))
+                    style = android.graphics.Paint.Style.FILL
+                }
+                val yHigh = yOf(zone.high)
+                val yLow = yOf(zone.low)
+                canvas.drawRect(left, yHigh, right, yLow, fillPaint)
+                linePaint.color = zoneColor
+                canvas.drawLine(left, yOf(zone.midpoint), right, yOf(zone.midpoint), linePaint)
+                textPaint.color = zoneColor
+                val zoneLabel = (if (isSupport) "S " else "R ") + String.format(Locale.US, "%.2f–%.2f", zone.low, zone.high)
+                canvas.drawText(zoneLabel, left + dp(3), yOf(zone.midpoint) - dp(3), textPaint)
+            }
+            textPaint.color = muted
             for (i in 0..4) {
                 val price = maxPrice - priceRange * i / 4.0
                 canvas.drawText(String.format(Locale.US, "%.2f", price), right + dp(4), top + (bottom - top) * i / 4f + dp(4), textPaint)
