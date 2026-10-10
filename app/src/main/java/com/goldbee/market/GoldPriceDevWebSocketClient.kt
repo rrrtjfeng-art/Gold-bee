@@ -278,6 +278,10 @@ class GoldPriceDevWebSocketClient(
         reconnectFuture = null
     }
 
+    private companion object {
+        const val HANDSHAKE_TIMEOUT_MS = 12_000L
+    }
+
     private fun providerSymbol(value: String): String =
         if (normalizeSymbol(value) == "XAUUSD") "XAU-USD-SPOT" else value
 
