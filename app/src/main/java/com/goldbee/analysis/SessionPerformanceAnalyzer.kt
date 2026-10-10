@@ -71,40 +71,34 @@ object SessionPerformanceAnalyzer {
         require(sourceCandles[Timeframe.M15].orEmpty().size >= 50) { "M15 至少需要 50 根 K 线。" }
         require(sourceCandles[Timeframe.H1].orEmpty().size >= 50) { "H1 至少需要 50 根 K 线。" }
 
-        val firstDate = Instant.ofEpochSecond(m5.first().timestamp).atZone(malaysiaZone).toLocalDate()
-        val lastDate = Instant.ofEpochSecond(m5.last().timestamp).atZone(malaysiaZone).toLocalDate()
-        val dates = generateSequence(firstDate) { it.plusDays(1) }
-            .takeWhile { !it.isAfter(lastDate) }
-            .toList()
-
+        // Count actual calendar dates represented by candles inside each window.
+        // Candle timestamps are open times, so classify using the M5 close/decision time.
         return windows.map { window ->
-            val sessionTrades = mutableListOf<BacktestTrade>()
-            var daysWithBars = 0
-            dates.forEach { date ->
-                val start = date.atTime(window.startHourMy, 0).atZone(malaysiaZone).toEpochSecond()
-                val endDate = if (window.endHourMy <= window.startHourMy) date.plusDays(1) else date
-                val end = endDate.atTime(window.endHourMy, 0).atZone(malaysiaZone).toEpochSecond()
-                if (m5.any { it.timestamp + Timeframe.M5.seconds > start && it.timestamp < end }) {
-                    daysWithBars++
-                    val dayResult = StrategyBacktester.run(
-                        sourceCandles = sourceCandles,
-                        maxHoldBars = maxHoldBars,
-                        roundTripCostPrice = roundTripCostPrice,
-                        decisionConfig = decisionConfig,
-                        decisionStartTimeSeconds = start,
-                        decisionEndTimeSeconds = end - 1
-                    )
-                    sessionTrades += dayResult.trades.filter { trade ->
-                        val decisionTime = trade.signalTimeSeconds + Timeframe.M5.seconds
-                        val hour = Instant.ofEpochSecond(decisionTime)
-                            .atZone(malaysiaZone).hour
-                        window.containsHour(hour) &&
-                            decisionTime >= start &&
-                            decisionTime < end
-                    }
+            val daysWithBars = m5.asSequence()
+                .map { candle ->
+                    Instant.ofEpochSecond(candle.timestamp + Timeframe.M5.seconds)
+                        .atZone(malaysiaZone)
                 }
-            }
-            summarize(window, daysWithBars, sessionTrades)
+                .filter { window.containsHour(it.hour) }
+                .map { it.toLocalDate() }
+                .distinct()
+                .count()
+                .toInt()
+
+            // One full-history pass per session is equivalent to repeatedly backtesting
+            // each date, but avoids re-scanning all historical candles once per day.
+            val sessionResult = StrategyBacktester.run(
+                sourceCandles = sourceCandles,
+                maxHoldBars = maxHoldBars,
+                roundTripCostPrice = roundTripCostPrice,
+                decisionConfig = decisionConfig,
+                decisionTimeFilter = { decisionTime ->
+                    val hour = Instant.ofEpochSecond(decisionTime)
+                        .atZone(malaysiaZone).hour
+                    window.containsHour(hour)
+                }
+            )
+            summarize(window, daysWithBars, sessionResult.trades)
         }
     }
 
