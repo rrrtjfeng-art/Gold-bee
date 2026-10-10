@@ -18,7 +18,7 @@ This is an initial, conservative **simulation-only** service. It reads quotes an
 - `MT5_SYMBOLS`: optional comma-separated exact broker symbols; default XAUUSD,EURUSD,GBPUSD,USDJPY,AUDUSD,USDCAD,USDCHF
 - `MT5_SPREAD_LIMITS`: optional comma-separated overrides such as `XAUUSD=0.8,EURUSD=0.0003`
 - `PAPER_START_BALANCE`: default 1000 account-currency units
-- `PAPER_LOT_SIZE`: default 0.01
+- `PAPER_LOT_SIZE`: default 0.01 maximum lot cap (actual lots are rounded down using MT5 symbol volume steps)\n- `PAPER_RISK_PER_TRADE_PERCENT`: default 0.25% of current paper balance, with the maximum lot cap still applied
 - `PAPER_MAX_OPEN_TRADES`: default 3
 - `PAPER_MAX_DAILY_LOSS_PERCENT`: default 1.5% of starting balance
 - `PAPER_MIN_RR`: default 1.5
