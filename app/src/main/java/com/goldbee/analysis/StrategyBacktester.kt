@@ -131,7 +131,7 @@ object StrategyBacktester {
             var exitType = BacktestExitType.TIME_EXIT
 
             for (index in entryIndex..lastScanIndex) {
-                val hit = resolveIntrabarExit(
+                val hit = resolveIntrabarExitFill(
                     direction = setup.direction,
                     candle = m5[index],
                     stopLoss = setup.stopLoss,
@@ -139,12 +139,8 @@ object StrategyBacktester {
                 )
                 if (hit != null) {
                     exitIndex = index
-                    exitType = hit
-                    exitPrice = when (hit) {
-                        BacktestExitType.STOP_LOSS -> setup.stopLoss
-                        BacktestExitType.TAKE_PROFIT -> setup.takeProfit
-                        BacktestExitType.TIME_EXIT -> m5[index].close
-                    }
+                    exitType = hit.first
+                    exitPrice = hit.second
                     break
                 }
             }
@@ -153,11 +149,14 @@ object StrategyBacktester {
                 TradeDirection.BUY -> exitPrice - entry
                 TradeDirection.SELL -> entry - exitPrice
             }
-            val rMultiple = when (exitType) {
-                BacktestExitType.STOP_LOSS -> -1.0
-                BacktestExitType.TAKE_PROFIT -> reward / risk
-                BacktestExitType.TIME_EXIT -> signedMove / risk
-            }
+            val rMultiple = calculateRMultiple(
+                direction = setup.direction,
+                entryPrice = entry,
+                exitPrice = exitPrice,
+                risk = risk,
+                exitType = exitType,
+                plannedReward = reward
+            )
 
             trades += BacktestTrade(
                 direction = setup.direction,
@@ -183,23 +182,62 @@ object StrategyBacktester {
         candle: Candle,
         stopLoss: Double,
         takeProfit: Double
-    ): BacktestExitType? {
+    ): BacktestExitType? =
+        resolveIntrabarExitFill(direction, candle, stopLoss, takeProfit)?.first
+
+    /**
+     * Returns exit type and modeled fill price. A stop crossed by an opening gap
+     * fills at the worse opening price rather than pretending it filled at the
+     * requested stop. Targets retain the target price, avoiding optimistic gap
+     * improvement. If both levels are touched intrabar, stop-loss wins.
+     */
+    internal fun resolveIntrabarExitFill(
+        direction: TradeDirection,
+        candle: Candle,
+        stopLoss: Double,
+        takeProfit: Double
+    ): Pair<BacktestExitType, Double>? {
         val stopHit: Boolean
         val targetHit: Boolean
+        val stopGap: Boolean
         when (direction) {
             TradeDirection.BUY -> {
                 stopHit = candle.low <= stopLoss
                 targetHit = candle.high >= takeProfit
+                stopGap = candle.open < stopLoss
             }
             TradeDirection.SELL -> {
                 stopHit = candle.high >= stopLoss
                 targetHit = candle.low <= takeProfit
+                stopGap = candle.open > stopLoss
             }
         }
         return when {
-            stopHit -> BacktestExitType.STOP_LOSS
-            targetHit -> BacktestExitType.TAKE_PROFIT
+            stopHit -> BacktestExitType.STOP_LOSS to
+                if (stopGap) candle.open else stopLoss
+            targetHit -> BacktestExitType.TAKE_PROFIT to takeProfit
             else -> null
+        }
+    }
+
+    internal fun calculateRMultiple(
+        direction: TradeDirection,
+        entryPrice: Double,
+        exitPrice: Double,
+        risk: Double,
+        exitType: BacktestExitType,
+        plannedReward: Double
+    ): Double {
+        require(risk.isFinite() && risk > 0.0) { "Risk must be finite and positive" }
+        val signedMove = when (direction) {
+            TradeDirection.BUY -> exitPrice - entryPrice
+            TradeDirection.SELL -> entryPrice - exitPrice
+        }
+        return when (exitType) {
+            // Use the actual modeled fill, so a gap through a stop can lose more than 1R.
+            BacktestExitType.STOP_LOSS,
+            BacktestExitType.TIME_EXIT -> signedMove / risk
+            BacktestExitType.TAKE_PROFIT -> plannedReward / risk
         }
     }
 
