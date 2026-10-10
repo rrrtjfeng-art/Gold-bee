@@ -143,6 +143,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var paperTradeText: TextView
+    private lateinit var paperBalanceInput: EditText
+    private lateinit var paperLotSizeInput: EditText
+    private lateinit var paperContractSizeInput: EditText
+    private lateinit var paperCommissionInput: EditText
+    private var paperAccountCurrency: String = "USD"
     private var pendingPaperSignal: PaperSignal? = null
     private lateinit var copySignalInput: EditText
     private lateinit var copyResultText: TextView
@@ -352,6 +357,24 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { action() }
         }
         parent.addView(button, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
+    }
+
+    private fun makeNumericInput(value: String, hintText: String): EditText =
+        EditText(this).apply {
+            setText(value)
+            hint = hintText
+            setHintTextColor(muted)
+            setTextColor(white)
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(31, 37, 49))
+        }
+
+    private fun setPaperCurrency(currency: String) {
+        paperAccountCurrency = if (currency == "USC") "USC" else "USD"
+        prefs.edit().putString("paper_account_currency", paperAccountCurrency).apply()
+        if (::paperTradeText.isInitialized) refreshPaperTradeStatus()
     }
 
     private fun buildScreen() {
@@ -611,6 +634,38 @@ class MainActivity : AppCompatActivity() {
             11f,
             gold
         )
+        addLabel(decision, "模拟账户参数", 14f, white, true)
+        addLabel(
+            decision,
+            "合约规格因经纪商而异。100 盎司/手只是常见默认假设，请先核对 MT5 品种规格；佣金 0 表示暂未计佣金。点差按 MT5 屏幕 Bid/Ask 模拟。",
+            11f,
+            gold
+        )
+        paperBalanceInput = makeNumericInput(
+            prefs.getString("paper_start_balance", "1000.00").orEmpty(),
+            "初始余额（账户单位）"
+        )
+        decision.addView(paperBalanceInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperLotSizeInput = makeNumericInput(
+            prefs.getString("paper_lot_size", "0.01").orEmpty(),
+            "模拟手数，例如 0.01"
+        )
+        decision.addView(paperLotSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperContractSizeInput = makeNumericInput(
+            prefs.getString("paper_contract_ounces", "100").orEmpty(),
+            "每手合约大小（盎司）"
+        )
+        decision.addView(paperContractSizeInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperCommissionInput = makeNumericInput(
+            prefs.getString("paper_commission_round_turn", "0.00").orEmpty(),
+            "每手往返佣金（USD）"
+        )
+        decision.addView(paperCommissionInput, LinearLayout.LayoutParams(-1, dp(48)).apply { bottomMargin = dp(6) })
+        paperAccountCurrency = prefs.getString("paper_account_currency", "USD").orEmpty().ifBlank { "USD" }
+        val currencyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(currencyRow, "账户单位：USD", paperAccountCurrency == "USD") { setPaperCurrency("USD") }
+        addButton(currencyRow, "账户单位：USC 美分", paperAccountCurrency == "USC") { setPaperCurrency("USC") }
+        decision.addView(currencyRow)
         paperTradeText = addLabel(
             decision,
             "模拟账户：尚无交易。确认按钮只会创建本地模拟记录，不会点击 MT5 或发送真实订单。",
