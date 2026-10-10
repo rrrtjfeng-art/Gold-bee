@@ -37,7 +37,9 @@ data class SessionPerformance(
     val expectancyR: Double,
     val profitFactor: Double?,
     val maxDrawdownR: Double,
-    val grossTotalR: Double
+    val grossTotalR: Double,
+    val averageTradesPerDataDay: Double,
+    val maxConsecutiveLosses: Int
 ) {
     val needsMoreData: Boolean get() = trades < 30 || calendarDays < 7
 }
@@ -106,14 +108,25 @@ object SessionPerformanceAnalyzer {
         days: Int,
         trades: List<BacktestTrade>
     ): SessionPerformance {
-        val wins = trades.count { it.rMultiple > 0.0 }
+        val orderedTrades = trades.sortedBy { it.signalTimeSeconds }
+        val wins = orderedTrades.count { it.rMultiple > 0.0 }
+        var currentLosingStreak = 0
+        var maxLosingStreak = 0
+        orderedTrades.forEach { trade ->
+            if (trade.rMultiple < 0.0) {
+                currentLosingStreak++
+                maxLosingStreak = max(maxLosingStreak, currentLosingStreak)
+            } else if (trade.rMultiple > 0.0) {
+                currentLosingStreak = 0
+            }
+        }
         val totalR = trades.sumOf { it.rMultiple }
-        val positiveR = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
-        val negativeR = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
+        val positiveR = orderedTrades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
+        val negativeR = -orderedTrades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
         var equity = 0.0
         var peak = 0.0
         var drawdown = 0.0
-        trades.forEach {
+        orderedTrades.forEach {
             equity += it.rMultiple
             peak = max(peak, equity)
             drawdown = max(drawdown, peak - equity)
@@ -128,7 +141,9 @@ object SessionPerformanceAnalyzer {
             expectancyR = if (trades.isEmpty()) 0.0 else totalR / trades.size,
             profitFactor = if (negativeR > 0.0) positiveR / negativeR else null,
             maxDrawdownR = drawdown,
-            grossTotalR = trades.sumOf { it.grossRMultiple }
+            grossTotalR = orderedTrades.sumOf { it.grossRMultiple },
+            averageTradesPerDataDay = if (days > 0) orderedTrades.size.toDouble() / days else 0.0,
+            maxConsecutiveLosses = maxLosingStreak
         )
     }
 }
