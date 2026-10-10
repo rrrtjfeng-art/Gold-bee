@@ -287,7 +287,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
         addLabel(
             copyCard,
-            "粘贴信号后，应用会用最近获取的报价和已加载的 M15 分析重新检查。没有明确 Entry、SL 或 TP，或行情过期时，一律不允许跟随。",
+            "粘贴信号后，应用会先检查信号格式及 Entry、SL、TP 逻辑。RealMarketAPI Free 没有连续实时行情流，因此不会判定信号当前仍可跟随。",
             11f,
             muted
         )
@@ -644,7 +644,7 @@ class MainActivity : AppCompatActivity() {
                     latestAnalysis = analysis
                     decisionText.text = "WAIT"
                     decisionText.setTextColor(gold)
-                    decisionReasonText.text = "历史数据已加载。正在刷新报价，并检查报价时效、点差、入场距离和盈亏比。"
+                    decisionReasonText.text = "历史数据已加载。正在获取 REST 参考数据；Free 版不生成可跟随信号。"
                     refreshQuoteAndEvaluate(candleMap, analysis)
                 }
             } catch (error: Exception) {
