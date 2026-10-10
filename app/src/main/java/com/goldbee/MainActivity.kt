@@ -819,13 +819,13 @@ class MainActivity : AppCompatActivity() {
         )
         addLabel(
             analysis,
-            "回测成本（每笔完整开仓+平仓）：把点差、滑点和手续费估算成黄金价格距离。填 0 表示完全不扣成本，结果会明显偏乐观。尽量按你的 MT5 实际成本填写。",
+            "回测成本（每笔完整开仓+平仓）：把点差、滑点和手续费折算成黄金价格距离。默认 0.30 只是示例，不代表你的经纪商真实成本；按 MT5 实际成交成本校准。建议再比较 0.60 的双倍成本压力测试。填 0 会让结果偏乐观。",
             11f,
             muted
         )
         backtestCostInput = EditText(this).apply {
-            setText("0.00")
-            hint = "例如 0.30；0 = 未计成本"
+            setText("0.30")
+            hint = "示例 0.30；按实际成本校准"
             setHintTextColor(muted)
             setTextColor(white)
             textSize = 14f
