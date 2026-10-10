@@ -12,6 +12,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.goldbee.analysis.MultiTimeframeAnalyzer
+import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.MultiTimeframeAnalysis
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
@@ -633,7 +634,18 @@ class MainActivity : AppCompatActivity() {
                         appendLine("${tf.name}：${candles.size} 根 K 线；趋势=${trendLabel(item.structure.trend)}；可用于决策=${item.available}")
                         appendLine("EMA9=${fmt(item.indicators.ema9)}  EMA20=${fmt(item.indicators.ema20)}  EMA50=${fmt(item.indicators.ema50)}  EMA200=${fmt(item.indicators.ema200)}")
                         appendLine("RSI14=${fmt(item.indicators.rsi14)}  MACD柱=${fmt(item.indicators.macdHistogram)}  ADX14=${fmt(item.indicators.adx14)}  ATR14=${fmt(item.indicators.atr14)}")
-                        appendLine("支撑=${fmt(item.structure.support)}  阻力=${fmt(item.structure.resistance)}  突破=${item.structure.breakout}")
+                        appendLine("旧式区间极值：支撑=${fmt(item.structure.support)}  阻力=${fmt(item.structure.resistance)}  突破=${item.structure.breakout}")
+                        val swing = SwingSupportResistanceAnalyzer.analyze(
+                            candles = candles,
+                            leftBars = 3,
+                            rightBars = 3,
+                            currentPrice = candles.lastOrNull()?.close,
+                            atr = item.indicators.atr14
+                        )
+                        appendLine("确认 Swing High（最近）：${swing.swingHighs.take(3).joinToString { fmt(it.price) }.ifBlank { "—" }}")
+                        appendLine("确认 Swing Low（最近）：${swing.swingLows.take(3).joinToString { fmt(it.price) }.ifBlank { "—" }}")
+                        appendLine("支撑区（按最近历史收盘价排序）：${swing.supportZones.take(3).joinToString(" | ") { "${fmt(it.low)}–${fmt(it.high)}（触碰 ${it.touches} 次）" }.ifBlank { "—" }}")
+                        appendLine("阻力区（按最近历史收盘价排序）：${swing.resistanceZones.take(3).joinToString(" | ") { "${fmt(it.low)}–${fmt(it.high)}（触碰 ${it.touches} 次）" }.ifBlank { "—" }}")
                     }
                     append("提示：这些指标依赖数据源与周期，需先验证数据准确性。")
                 }
