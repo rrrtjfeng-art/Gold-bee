@@ -110,6 +110,9 @@ object PaperTradeMonitor {
             .put("entryAsk", trade.entryAsk)
             .put("entryTimestampMillis", trade.entryTimestampMillis)
             .put("source", trade.source)
+            .put("lotSize", trade.lotSize)
+            .put("contractSizeOunces", trade.contractSizeOunces)
+            .put("commissionPerLotRoundTurnUsd", trade.commissionPerLotRoundTurnUsd)
             .put("status", trade.status.name)
         fun nullable(key: String, value: Any?) {
             json.put(key, value ?: JSONObject.NULL)
