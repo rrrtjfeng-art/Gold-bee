@@ -157,7 +157,7 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().remove("api_key").apply()
         }
         if (EncryptedApiKeyStore.get(this, "realmarket_api_key").isNotBlank()) {
-            apiKeyInput.hint = "实时行情 Key 已安全保存；留空继续使用"
+            apiKeyInput.hint = "参考行情 Key 已安全保存；留空继续使用"
         }
 
         addLabel(settings, "历史 K 线：Twelve Data API Key", 12f)
@@ -178,7 +178,7 @@ class MainActivity : AppCompatActivity() {
             if (historyKey.isNotBlank()) ApiKeyStore.save(this, historyKey)
             statusText.text = when {
                 getRealMarketKey().isBlank() -> "状态：请填写 RealMarketAPI Key"
-                ApiKeyStore.get(this).isBlank() -> "状态：实时行情 Key 已保存；还需 Twelve Data Key 才能分析历史数据"
+                ApiKeyStore.get(this).isBlank() -> "状态：参考行情 Key 已保存；还需 Twelve Data Key 才能分析历史数据"
                 else -> "状态：API Key 已安全保存"
             }
         }
@@ -304,7 +304,7 @@ class MainActivity : AppCompatActivity() {
             copyResultText.setTextColor(white)
         }
         copyCard.addView(copyRow)
-        copyResultText = addLabel(copyCard, "等待审核。先刷新报价并加载 M5、M15、H1 历史数据。", 13f, white)
+        copyResultText = addLabel(copyCard, "等待审核。先刷新参考数据并加载 M5、M15、H1 历史数据；Free 版不会判定可跟随。", 13f, white)
         root.addView(copyCard)
 
         addLabel(root, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
