@@ -565,7 +565,7 @@ class MainActivity : AppCompatActivity() {
         addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
         addLabel(
             copyCard,
-            "粘贴信号后，应用会先检查信号格式及 Entry、SL、TP 逻辑。RealMarketAPI Free 没有连续实时行情流，因此不会判定信号当前仍可跟随。",
+            "粘贴信号后，应用会检查方向、Entry、SL、TP、风险回报比、当前 MT5 屏幕报价、点差、价格距离和多周期趋势。没有新鲜且有效的 MT5 Bid/Ask 时，一律 NO TRADE。",
             11f,
             muted
         )
@@ -582,7 +582,7 @@ class MainActivity : AppCompatActivity() {
             copyResultText.setTextColor(white)
         }
         copyCard.addView(copyRow)
-        copyResultText = addLabel(copyCard, "等待审核。先刷新参考数据并加载 M5、M15、H1 历史数据；Free 版不会判定可跟随。", 13f, white)
+        copyResultText = addLabel(copyCard, "等待审核。先加载 M5、M15、H1 历史数据，并确保 MT5 屏幕读取或 OCR 正在更新。行情过期或识别不全时会拒绝跟随。", 13f, white)
         root.addView(copyCard)
 
         addLabel(root, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
@@ -640,28 +640,114 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        if (!RealMarketPlanPolicy.allowsActionableSignals(realMarketApiPlan)) {
+        val observation = getSharedPreferences(
+            Mt5ScreenAccessibilityService.PREFS_NAME,
+            MODE_PRIVATE
+        )
+        val observedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        val source = observation.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val symbol = observation.getString(Mt5ScreenAccessibilityService.KEY_SYMBOL, "")
+            .orEmpty().uppercase().replace("/", "")
+        val bid = observation.getString(Mt5ScreenAccessibilityService.KEY_BID, "")
+            .orEmpty().toDoubleOrNull()
+        val ask = observation.getString(Mt5ScreenAccessibilityService.KEY_ASK, "")
+            .orEmpty().toDoubleOrNull()
+        val ageMillis = System.currentTimeMillis() - observedAt
+
+        fun blockCopy(reason: String) {
             copyResultText.setTextColor(red)
-            copyResultText.text = RealMarketPlanPolicy.blockReason(realMarketApiPlan)
-            return
+            copyResultText.text = "NO TRADE：$reason"
         }
 
-        val currentPrice = lastQuotePrice
-        val quoteAge = System.currentTimeMillis() - lastQuoteReceivedAt
-        if (currentPrice == null || !currentPrice.isFinite() || currentPrice <= 0.0 ||
-            quoteAge !in 0L..30_000L ||
-            !SourceQuoteTimestamp.isFresh(lastQuoteSourceTimestamp)
+        if (source != "ACCESSIBILITY" && source != "SCREEN_OCR") {
+            blockCopy("没有来自 MT5 的屏幕行情。启用只读读取或屏幕 OCR 后重试。")
+            return
+        }
+        if (observedAt <= 0L || ageMillis !in 0L..3000L) {
+            blockCopy("MT5 屏幕报价已过期。请切换到 MT5 等待更新，再立即审核信号。")
+            return
+        }
+        if (symbol !in setOf("XAUUSD", "GOLD")) {
+            blockCopy("无法确认当前屏幕品种为 XAUUSD；拒绝使用不确定的报价。")
+            return
+        }
+        if (bid == null || ask == null || !bid.isFinite() || !ask.isFinite() ||
+            bid <= 0.0 || ask <= bid
         ) {
-            copyResultText.setTextColor(red)
-            copyResultText.text = "NO TRADE：报价不存在、来源时间无法验证或行情 K 线已超过允许时效。刷新报价后重试；来源时间无法验证时不能跟随。"
+            blockCopy("当前 MT5 屏幕未识别到有效 Bid 与 Ask；不能用延迟 REST 报价代替。")
             return
         }
 
-        val analysis = latestAnalysis
-        val candles = latestCandles
-        if (analysis == null || candles[Timeframe.M15].orEmpty().size < 50) {
-            copyResultText.setTextColor(red)
-            copyResultText.text = "NO TRADE：尚无足够的 M15 历史数据。先点击“加载历史数据并分析”。"
+        val history = latestCandles
+        val priorAnalysis = latestAnalysis
+        val requiredTimeframes = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1)
+        if (priorAnalysis == null || requiredTimeframes.any { history[it].orEmpty().size < 50 }) {
+            blockCopy("历史 K 线不足。先点击“加载历史数据并分析”。")
+            return
+        }
+        val nowSeconds = System.currentTimeMillis() / 1000L
+        val staleTimeframe = requiredTimeframes.firstOrNull { tf ->
+            val last = history[tf].orEmpty().lastOrNull() ?: return@firstOrNull true
+            val ageSeconds = nowSeconds - last.timestamp
+            ageSeconds < -tf.seconds || ageSeconds > tf.seconds * 2L + 60L
+        }
+        if (staleTimeframe != null) {
+            blockCopy(staleTimeframe.name + " 历史 K 线过旧；请重新加载。")
+            return
+        }
+
+        val atr = priorAnalysis.m15.indicators.atr14
+        if (atr == null || !atr.isFinite() || atr <= 0.0) {
+            blockCopy("M15 ATR 不可用，无法检查点差与追价风险。")
+            return
+        }
+        val currentPrice = bid + (ask - bid) / 2.0
+        if (ask - bid > atr * 0.15) {
+            blockCopy("当前 MT5 点差相对 M15 ATR 过大；等待点差收窄。")
+            return
+        }
+        val latestM5Close = history[Timeframe.M5].orEmpty().last().close
+        if (kotlin.math.abs(currentPrice - latestM5Close) > atr) {
+            blockCopy("当前 MT5 价格与最近 M5 收盘价相差超过 1 个 M15 ATR；可能是数据源差异或行情跳变，禁止追价。")
+            return
+        }
+
+        val mt5Tick = MarketTick(
+            symbol = "XAUUSD",
+            bid = bid,
+            ask = ask,
+            timestamp = observedAt,
+            source = "MT5 screen quote (COPY review)"
+        )
+        val accepted = mt5QuoteController.submitTick(mt5Tick)
+        val lastTick = mt5QuoteController.getLatestTick()
+        if (!accepted && (lastTick == null ||
+                lastTick.timestamp != observedAt ||
+                lastTick.bid != bid ||
+                lastTick.ask != ask)
+        ) {
+            blockCopy("MT5 报价未通过新鲜度或顺序验证；等待屏幕刷新后重试。")
+            return
+        }
+
+        val candles = linkedMapOf(
+            Timeframe.M5 to mt5QuoteController.getCandles(Timeframe.M5),
+            Timeframe.M15 to mt5QuoteController.getCandles(Timeframe.M15),
+            Timeframe.H1 to mt5QuoteController.getCandles(Timeframe.H1)
+        )
+        val analysis = try {
+            MultiTimeframeAnalyzer.analyze(candles)
+        } catch (error: Exception) {
+            blockCopy("当前行情分析失败：" + (error.message ?: "未知错误"))
+            return
+        }
+        latestCandles = candles
+        latestAnalysis = analysis
+
+        val signalRisk = kotlin.math.abs(entry - stopLoss)
+        val signalReward = kotlin.math.abs(takeProfit - entry)
+        if (signalRisk <= 0.0 || signalReward / signalRisk < 1.0) {
+            blockCopy("信号的风险回报比低于 1:1；不跟随。")
             return
         }
 
@@ -693,6 +779,9 @@ class MainActivity : AppCompatActivity() {
             evaluation.priceDistance ?: 0.0,
             evaluation.reason
         )
+        copyResultText.text = copyResultText.text.toString() +
+            "\n报价来源：MT5 屏幕读取（${ageMillis} ms）。历史 K 线来自 Twelve Data。" +
+            "\n此结果只用于人工复核，不会自动下单，也不保证盈利。"
     }
 
     private fun refreshQuoteAndEvaluate(
