@@ -29,6 +29,9 @@ object Mt5ScreenObservationParser {
     private val bidRegex = Regex("(?i)(?:BID|买价|卖出价)\\s*[:：=@-]?\\s*$number")
     private val askRegex = Regex("(?i)(?:ASK|卖价|买入价)\\s*[:：=@-]?\\s*$number")
     private val priceRegex = Regex("(?i)(?:CURRENT\\s*PRICE|PRICE|报价|当前价格)\\s*[:：=@-]?\\s*$number")
+    private val explicitDirectionRegex = Regex(
+        "(?i)^\\s*(?:DIRECTION|SIDE|SIGNAL|TRADE\\s*TYPE|TYPE|方向|交易方向|信号|交易类型)\\s*[:：=]?\\s*(BUY|SELL|买入|卖出|做多|做空)(?:\\b|\\s|$)"
+    )
 
     fun parse(visibleTexts: List<String>): Mt5ScreenObservation {
         val safeTexts = visibleTexts
@@ -42,10 +45,16 @@ object Mt5ScreenObservationParser {
         val symbol = symbolRegex.find(joined)?.groupValues?.getOrNull(1)?.uppercase()
             ?.replace("/", "")
         val timeframe = timeframeRegex.find(joined)?.groupValues?.getOrNull(1)?.uppercase()
-        val direction = when {
-            Regex("(?i)(?<![A-Z])BUY(?![A-Z])").containsMatchIn(joined) -> "BUY"
-            Regex("(?i)(?<![A-Z])SELL(?![A-Z])").containsMatchIn(joined) -> "SELL"
-            else -> null
+        // MT5 chart screens commonly display BUY and SELL buttons together.
+        // A bare button label is not evidence of the active trade direction.
+        val direction = safeTexts.firstNotNullOfOrNull { text ->
+            val value = explicitDirectionRegex.find(text)?.groupValues?.getOrNull(1)
+                ?: return@firstNotNullOfOrNull null
+            when (value.uppercase()) {
+                "BUY", "买入", "做多" -> "BUY"
+                "SELL", "卖出", "做空" -> "SELL"
+                else -> null
+            }
         }
 
         return Mt5ScreenObservation(

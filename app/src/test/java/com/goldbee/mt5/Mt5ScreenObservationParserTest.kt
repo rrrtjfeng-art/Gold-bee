@@ -9,7 +9,7 @@ class Mt5ScreenObservationParserTest {
     @Test
     fun extractsExplicitSignalLevelsFromVisibleLabels() {
         val result = Mt5ScreenObservationParser.parse(
-            listOf("XAUUSD", "M15", "SELL", "Entry: 4320.5", "SL: 4330.0", "TP1: 4300.0", "Bid: 4318.2", "Ask: 4318.5")
+            listOf("XAUUSD", "M15", "Direction: SELL", "Entry: 4320.5", "SL: 4330.0", "TP1: 4300.0", "Bid: 4318.2", "Ask: 4318.5")
         )
 
         assertEquals("XAUUSD", result.symbol)
@@ -27,10 +27,30 @@ class Mt5ScreenObservationParserTest {
     fun doesNotInventMissingEntryOrStopLoss() {
         val result = Mt5ScreenObservationParser.parse(listOf("GOLD", "BUY", "TP: 4400"))
         assertEquals("GOLD", result.symbol)
-        assertEquals("BUY", result.direction)
+        assertEquals(null, result.direction)
         assertFalse(result.hasTradeLevels)
         assertEquals(null, result.entry)
         assertEquals(null, result.stopLoss)
+    }
+
+    @Test
+    fun doesNotMistakeVisibleBuyAndSellButtonsForAnActiveDirection() {
+        val result = Mt5ScreenObservationParser.parse(
+            listOf("XAUUSD", "M15", "BUY", "SELL", "Bid: 4318.2", "Ask: 4318.5")
+        )
+
+        assertEquals(null, result.direction)
+        assertFalse(result.hasTradeLevels)
+    }
+
+    @Test
+    fun parsesChineseExplicitDirectionLabel() {
+        val result = Mt5ScreenObservationParser.parse(
+            listOf("交易方向：做空", "Entry: 4320.5", "SL: 4330.0", "TP: 4300.0")
+        )
+
+        assertEquals("SELL", result.direction)
+        assertTrue(result.hasTradeLevels)
     }
 
     @Test
