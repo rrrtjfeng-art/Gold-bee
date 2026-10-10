@@ -23,6 +23,35 @@ class GoldPriceDevTickParserTest {
     }
 
     @Test
+    fun normalizesUnixSecondTimestampToMilliseconds() {
+        val tick = GoldPriceDevTickParser.parse(
+            """{"type":"tick","symbol":"XAU-USD-SPOT","bid":"3312.40","ask":"3312.50","timestamp":"1791616200"}"""
+        )
+
+        requireNotNull(tick)
+        assertEquals(1791616200000L, tick.timestamp)
+    }
+
+    @Test
+    fun preservesUnixMillisecondTimestamp() {
+        val tick = GoldPriceDevTickParser.parse(
+            """{"type":"tick","symbol":"XAU-USD-SPOT","bid":"3312.40","ask":"3312.50","timestamp":"1791616200000"}"""
+        )
+
+        requireNotNull(tick)
+        assertEquals(1791616200000L, tick.timestamp)
+    }
+
+    @Test
+    fun rejectsInvalidPrimaryTimestampInsteadOfUsingFallback() {
+        assertNull(
+            GoldPriceDevTickParser.parse(
+                """{"type":"tick","symbol":"XAU-USD-SPOT","bid":"3312.40","ask":"3312.50","computed_at":"invalid","timestamp":"1791616200000"}"""
+            )
+        )
+    }
+
+    @Test
     fun rejectsTickWhenBidOrAskIsMissingRatherThanInventingPrices() {
         assertNull(
             GoldPriceDevTickParser.parse(

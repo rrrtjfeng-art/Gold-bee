@@ -1,8 +1,6 @@
 package com.goldbee.market
 
 import org.json.JSONObject
-import java.time.Instant
-import java.time.format.DateTimeParseException
 
 /**
  * Parses the documented GoldPrice.dev live stream frame.
@@ -52,16 +50,19 @@ object GoldPriceDevTickParser {
             .removeSuffix("SPOT")
 
     private fun parseTimestamp(obj: JSONObject): Long? {
-        val isoTimestamp = obj.optString("computed_at")
-        if (isoTimestamp.isNotBlank() && isoTimestamp != "null") {
-            return try {
-                Instant.parse(isoTimestamp).toEpochMilli().takeIf { it > 0L }
-            } catch (_: DateTimeParseException) {
-                null
-            }
+        val computedAt = obj.optString("computed_at").takeUnless {
+            it.isBlank() || it == "null"
+        }
+        if (computedAt != null) {
+            // If the provider supplies an invalid primary timestamp, reject the
+            // frame rather than silently falling back to another field.
+            return SourceQuoteTimestamp.parseMillis(computedAt)
+                ?.takeIf { it > 0L }
         }
 
-        val numericTimestamp = obj.optLong("timestamp", 0L)
-        return numericTimestamp.takeIf { it > 0L }
+        // Provider timestamps may be Unix seconds or milliseconds. MarketTick
+        // consistently stores Unix milliseconds, so normalize before returning.
+        return SourceQuoteTimestamp.parseMillis(obj.optString("timestamp"))
+            ?.takeIf { it > 0L }
     }
 }
