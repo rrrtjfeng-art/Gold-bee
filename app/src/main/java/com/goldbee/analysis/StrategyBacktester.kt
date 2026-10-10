@@ -23,6 +23,9 @@ data class BacktestTrade(
     val stopLoss: Double,
     val takeProfit: Double,
     val exitPrice: Double,
+    /** Result before the configured round-trip cost assumption. */
+    val grossRMultiple: Double,
+    /** Result after subtracting the configured round-trip cost assumption. */
     val rMultiple: Double,
     val exitType: BacktestExitType
 )
@@ -33,7 +36,12 @@ data class BacktestResult(
     val wins: Int,
     val losses: Int,
     val winRatePercent: Double,
+    /** Net R after the configured cost assumption. */
     val totalR: Double,
+    /** Gross R before costs, useful for comparing the cost impact. */
+    val grossTotalR: Double,
+    /** Assumed round-trip transaction cost, expressed as equivalent XAUUSD price movement. */
+    val roundTripCostPrice: Double,
     val expectancyR: Double,
     val profitFactor: Double?,
     val maxDrawdownR: Double,
@@ -56,16 +64,21 @@ data class BacktestResult(
  *
  * Each decision sees only candles whose close time is at or before the signal
  * time. Entries execute at the next M5 open. If stop and target are both touched
- * inside one candle, stop-loss is assumed first. Spread, slippage, commissions,
- * broker-specific pricing, and rejected orders are not simulated.
+ * inside one candle, stop-loss is assumed first. A configurable round-trip
+ * cost equivalent is subtracted from each trade in price units. This is a
+ * simplified sensitivity assumption, not a reconstruction of broker fills.
  */
 object StrategyBacktester {
 
     fun run(
         sourceCandles: Map<Timeframe, List<Candle>>,
-        maxHoldBars: Int = 48
+        maxHoldBars: Int = 48,
+        roundTripCostPrice: Double = 0.0
     ): BacktestResult {
         require(maxHoldBars > 0) { "maxHoldBars must be greater than zero" }
+        require(roundTripCostPrice.isFinite() && roundTripCostPrice >= 0.0) {
+            "Round-trip cost must be finite and non-negative"
+        }
 
         val m5 = sourceCandles[Timeframe.M5].orEmpty().sortedBy { it.timestamp }
         val m15 = sourceCandles[Timeframe.M15].orEmpty().sortedBy { it.timestamp }
@@ -73,7 +86,7 @@ object StrategyBacktester {
         val trades = mutableListOf<BacktestTrade>()
 
         if (m5.size < 51 || m15.size < 50 || h1.size < 50) {
-            return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp)
+            return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp, roundTripCostPrice)
         }
 
         var signalIndex = 0
@@ -145,17 +158,18 @@ object StrategyBacktester {
                 }
             }
 
-            val signedMove = when (setup.direction) {
-                TradeDirection.BUY -> exitPrice - entry
-                TradeDirection.SELL -> entry - exitPrice
-            }
-            val rMultiple = calculateRMultiple(
+            val grossRMultiple = calculateRMultiple(
                 direction = setup.direction,
                 entryPrice = entry,
                 exitPrice = exitPrice,
                 risk = risk,
                 exitType = exitType,
                 plannedReward = reward
+            )
+            val netRMultiple = applyRoundTripCost(
+                grossRMultiple = grossRMultiple,
+                risk = risk,
+                roundTripCostPrice = roundTripCostPrice
             )
 
             trades += BacktestTrade(
@@ -167,14 +181,34 @@ object StrategyBacktester {
                 stopLoss = setup.stopLoss,
                 takeProfit = setup.takeProfit,
                 exitPrice = exitPrice,
-                rMultiple = rMultiple,
+                grossRMultiple = grossRMultiple,
+                rMultiple = netRMultiple,
                 exitType = exitType
             )
             // One position at a time: do not open a new trade before this one exits.
             signalIndex = exitIndex + 1
         }
 
-        return result(m5.size, trades, m5.firstOrNull()?.timestamp, m5.lastOrNull()?.timestamp)
+        return result(
+            m5.size,
+            trades,
+            m5.firstOrNull()?.timestamp,
+            m5.lastOrNull()?.timestamp,
+            roundTripCostPrice
+        )
+    }
+
+    internal fun applyRoundTripCost(
+        grossRMultiple: Double,
+        risk: Double,
+        roundTripCostPrice: Double
+    ): Double {
+        require(grossRMultiple.isFinite()) { "Gross R must be finite" }
+        require(risk.isFinite() && risk > 0.0) { "Risk must be finite and positive" }
+        require(roundTripCostPrice.isFinite() && roundTripCostPrice >= 0.0) {
+            "Round-trip cost must be finite and non-negative"
+        }
+        return grossRMultiple - roundTripCostPrice / risk
     }
 
     internal fun resolveIntrabarExit(
@@ -253,13 +287,14 @@ object StrategyBacktester {
         sampleBars: Int,
         trades: List<BacktestTrade>,
         start: Long?,
-        end: Long?
+        end: Long?,
+        roundTripCostPrice: Double
     ): BacktestResult {
         val wins = trades.count { it.rMultiple > 0.0 }
         val losses = trades.count { it.rMultiple < 0.0 }
         val totalR = trades.sumOf { it.rMultiple }
-        val grossProfit = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
-        val grossLoss = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
+        val netProfit = trades.filter { it.rMultiple > 0.0 }.sumOf { it.rMultiple }
+        val netLoss = -trades.filter { it.rMultiple < 0.0 }.sumOf { it.rMultiple }
         var equity = 0.0
         var peak = 0.0
         var maxDrawdown = 0.0
@@ -275,8 +310,10 @@ object StrategyBacktester {
             losses = losses,
             winRatePercent = if (trades.isEmpty()) 0.0 else wins * 100.0 / trades.size,
             totalR = totalR,
+            grossTotalR = trades.sumOf { it.grossRMultiple },
+            roundTripCostPrice = roundTripCostPrice,
             expectancyR = if (trades.isEmpty()) 0.0 else totalR / trades.size,
-            profitFactor = if (grossLoss > 0.0) grossProfit / grossLoss else null,
+            profitFactor = if (netLoss > 0.0) netProfit / netLoss else null,
             maxDrawdownR = maxDrawdown,
             sampleStartSeconds = start,
             sampleEndSeconds = end
