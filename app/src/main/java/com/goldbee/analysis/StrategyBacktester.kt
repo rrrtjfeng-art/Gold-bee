@@ -233,11 +233,15 @@ object StrategyBacktester {
             signalIndex = exitIndex + 1
         }
 
+        val reportCandles = m5.filter { candle ->
+            decisionStartTimeSeconds == null ||
+                candle.timestamp + Timeframe.M5.seconds >= decisionStartTimeSeconds
+        }
         return result(
-            m5.size,
+            reportCandles.size,
             trades,
-            m5.firstOrNull()?.timestamp,
-            m5.lastOrNull()?.timestamp,
+            reportCandles.firstOrNull()?.timestamp,
+            reportCandles.lastOrNull()?.timestamp,
             roundTripCostPrice
         )
     }
