@@ -2,6 +2,8 @@ package com.goldbee.analysis
 
 import com.goldbee.market.Candle
 import com.goldbee.market.Timeframe
+import java.time.Instant
+import java.time.ZoneId
 
 /**
  * Small, transparent parameter search for research only.
@@ -29,7 +31,8 @@ object StrategyTrainer {
         sourceCandles: Map<Timeframe, List<Candle>>,
         roundTripCostPrice: Double,
         maxHoldBars: Int = 48,
-        trainingFraction: Double = 0.70
+        trainingFraction: Double = 0.70,
+        sessionWindow: SessionWindow? = null
     ): StrategyTrainingResult {
         require(trainingFraction in 0.60..0.80) {
             "Training fraction must be between 0.60 and 0.80"
@@ -55,6 +58,13 @@ object StrategyTrainer {
             candles.filter { it.timestamp < splitTime }
         }
         val baseline = MultiTimeframeDecisionConfig()
+        val sessionFilter: ((Long) -> Boolean)? = sessionWindow?.let { window ->
+            { decisionTime ->
+                val hour = Instant.ofEpochSecond(decisionTime)
+                    .atZone(ZoneId.of("Asia/Kuala_Lumpur")).hour
+                window.containsHour(hour)
+            }
+        }
         val candidates = minimumScoreGrid.flatMap { score ->
             targetRGrid.map { target ->
                 MultiTimeframeDecisionConfig(minimumScore = score, targetR = target)
@@ -67,7 +77,8 @@ object StrategyTrainer {
                 sourceCandles = trainingCandles,
                 maxHoldBars = maxHoldBars,
                 roundTripCostPrice = roundTripCostPrice,
-                decisionConfig = config
+                decisionConfig = config,
+                decisionTimeFilter = sessionFilter
             )
             evaluated++
             if (
@@ -91,21 +102,24 @@ object StrategyTrainer {
             sourceCandles = trainingCandles,
             maxHoldBars = maxHoldBars,
             roundTripCostPrice = roundTripCostPrice,
-            decisionConfig = baseline
+            decisionConfig = baseline,
+            decisionTimeFilter = sessionFilter
         )
         val validationResult = StrategyBacktester.run(
             sourceCandles = sourceCandles,
             maxHoldBars = maxHoldBars,
             roundTripCostPrice = roundTripCostPrice,
             decisionConfig = config,
-            decisionStartTimeSeconds = splitTime
+            decisionStartTimeSeconds = splitTime,
+            decisionTimeFilter = sessionFilter
         )
         val validationDoubleCost = StrategyBacktester.run(
             sourceCandles = sourceCandles,
             maxHoldBars = maxHoldBars,
             roundTripCostPrice = roundTripCostPrice * 2.0,
             decisionConfig = config,
-            decisionStartTimeSeconds = splitTime
+            decisionStartTimeSeconds = splitTime,
+            decisionTimeFilter = sessionFilter
         )
         val note = if (chosen == null) {
             "训练段没有候选参数同时满足至少 10 笔交易、净期望为正、Profit Factor 大于 1；保留默认参数，不声称已找到优势。"
