@@ -27,6 +27,12 @@ object CopyDecisionGate {
             return blocked("当前行情价格无效。")
         }
 
+        if (snapshot.source.contains("Twelve Data", ignoreCase = true)) {
+            return blocked(
+                "当前行情源只有参考价，没有真实 bid/ask 点差；无法评估复制信号的净盈亏比，禁止跟随。请使用具备真实买卖报价的行情源。"
+            )
+        }
+
         if (!snapshot.isFresh()) {
             return blocked("当前行情已经过期，禁止跟随。")
         }
