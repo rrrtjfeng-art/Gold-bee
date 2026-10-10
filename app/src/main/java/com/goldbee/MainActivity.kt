@@ -12,8 +12,11 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.goldbee.analysis.MultiTimeframeAnalyzer
+import com.goldbee.analysis.MultiTimeframeAnalysis
 import com.goldbee.analysis.MultiTimeframeDecisionEngine
 import com.goldbee.analysis.Trend
+import com.goldbee.decision.CopySignalEvaluator
+import com.goldbee.decision.CopySignalParser
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
 import com.goldbee.market.RealMarketPrice
@@ -49,6 +52,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var analysisText: TextView
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
+    private lateinit var copySignalInput: EditText
+    private lateinit var copyResultText: TextView
+    @Volatile private var latestCandles: Map<Timeframe, List<Candle>> = emptyMap()
+    @Volatile private var latestAnalysis: MultiTimeframeAnalysis? = null
+    @Volatile private var lastQuotePrice: Double? = null
+    @Volatile private var lastQuoteReceivedAt: Long = 0L
     private var polling = false
     private var requestInProgress = false
     private val pollInterval = 10 * 60 * 1000L
@@ -218,6 +227,31 @@ class MainActivity : AppCompatActivity() {
             gold
         )
         root.addView(decision)
+
+        val copyCard = makeCard()
+        addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
+        addLabel(
+            copyCard,
+            "粘贴信号后，应用会用最近获取的报价和已加载的 M15 分析重新检查。没有明确 Entry、SL 或 TP，或行情过期时，一律不允许跟随。",
+            11f,
+            muted
+        )
+        copySignalInput = makeCopyInput()
+        copyCard.addView(
+            copySignalInput,
+            LinearLayout.LayoutParams(-1, dp(112)).apply { bottomMargin = dp(8) }
+        )
+        val copyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(copyRow, "审核复制信号", true) { evaluateCopySignal() }
+        addButton(copyRow, "清空") {
+            copySignalInput.text.clear()
+            copyResultText.text = "等待审核。"
+            copyResultText.setTextColor(white)
+        }
+        copyCard.addView(copyRow)
+        copyResultText = addLabel(copyCard, "等待审核。先刷新报价并加载 M5、M15、H1 历史数据。", 13f, white)
+        root.addView(copyCard)
+
         addLabel(root, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
     }
 
@@ -230,6 +264,93 @@ class MainActivity : AppCompatActivity() {
         maxLines = 1
         setPadding(dp(12), dp(10), dp(12), dp(10))
         setBackgroundColor(Color.rgb(31, 37, 49))
+    }
+
+    private fun makeCopyInput(): EditText = EditText(this).apply {
+        hint = "例如：BUY Entry: 4050 SL: 4040 TP: 4070"
+        setHintTextColor(muted)
+        setTextColor(white)
+        textSize = 14f
+        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+        minLines = 3
+        maxLines = 5
+        gravity = android.view.Gravity.TOP
+        setPadding(dp(12), dp(10), dp(12), dp(10))
+        setBackgroundColor(Color.rgb(31, 37, 49))
+    }
+
+    private fun evaluateCopySignal() {
+        val parsed = CopySignalParser.parse(copySignalInput.text.toString())
+        val signal = parsed.getOrNull()
+        if (signal == null) {
+            copyResultText.setTextColor(red)
+            copyResultText.text = parsed.exceptionOrNull()?.message ?: "无法识别信号。"
+            return
+        }
+
+        val entry = signal.entry
+        val stopLoss = signal.stopLoss
+        val takeProfit = signal.takeProfit
+        if (entry == null || stopLoss == null || takeProfit == null) {
+            copyResultText.setTextColor(red)
+            copyResultText.text = "NO TRADE：必须明确提供 Entry、SL 和 TP；缺少任何一项都禁止跟随。"
+            return
+        }
+        val levelsValid = when (signal.direction.name) {
+            "BUY" -> stopLoss < entry && takeProfit > entry
+            "SELL" -> takeProfit < entry && stopLoss > entry
+            else -> false
+        }
+        if (!levelsValid) {
+            copyResultText.setTextColor(red)
+            copyResultText.text = "NO TRADE：止损和止盈位置与 BUY/SELL 方向不匹配。"
+            return
+        }
+
+        val currentPrice = lastQuotePrice
+        val quoteAge = System.currentTimeMillis() - lastQuoteReceivedAt
+        if (currentPrice == null || currentPrice <= 0.0 || quoteAge !in 0L..30_000L) {
+            copyResultText.setTextColor(red)
+            copyResultText.text = "NO TRADE：报价不存在或已超过 30 秒。先点击“刷新报价”，再审核信号。"
+            return
+        }
+
+        val analysis = latestAnalysis
+        val candles = latestCandles
+        if (analysis == null || candles[Timeframe.M15].orEmpty().size < 50) {
+            copyResultText.setTextColor(red)
+            copyResultText.text = "NO TRADE：尚无足够的 M15 历史数据。先点击“加载历史数据并分析”。"
+            return
+        }
+
+        val evaluation = CopySignalEvaluator.evaluate(
+            signal = signal,
+            currentPrice = currentPrice,
+            analysis = analysis,
+            candles = candles
+        )
+        if (evaluation.action.name == "NO_TRADE") {
+            copyResultText.setTextColor(red)
+            copyResultText.text = "NO TRADE\n当前报价：${fmt(currentPrice)}\nEntry 距离：${fmt(evaluation.priceDistance)}\n原因：${evaluation.reason}"
+            return
+        }
+
+        val risk = kotlin.math.abs(entry - stopLoss)
+        val reward = kotlin.math.abs(takeProfit - entry)
+        val rr = if (risk > 0.0) reward / risk else 0.0
+        copyResultText.setTextColor(gold)
+        copyResultText.text = String.format(
+            Locale.US,
+            "审核结果：%s（仅供人工复核）\n当前报价：%.3f\nEntry：%.3f · SL：%.3f · TP：%.3f\nR:R = 1:%.2f\n价格距离：%.3f\n理由：%s\n\n这不是下单指令。再次确认点差、报价和风险后，由你自行决定是否在 MT5 操作。",
+            evaluation.action.name,
+            currentPrice,
+            entry,
+            stopLoss,
+            takeProfit,
+            rr,
+            evaluation.priceDistance ?: 0.0,
+            evaluation.reason
+        )
     }
 
     private fun getRealMarketKey(): String {
@@ -263,6 +384,8 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPrice(q: RealMarketPrice) {
+        lastQuotePrice = q.close
+        lastQuoteReceivedAt = System.currentTimeMillis()
         statusText.text = "状态：已取得实时行情响应"
         statusText.setTextColor(green)
         priceText.text = String.format(Locale.US, "%.2f", q.close)
@@ -310,6 +433,8 @@ class MainActivity : AppCompatActivity() {
 
                 val analysis = MultiTimeframeAnalyzer.analyze(candleMap)
                 val decision = MultiTimeframeDecisionEngine.decide(candleMap, analysis)
+                latestCandles = candleMap.toMap()
+                latestAnalysis = analysis
                 val rendered = buildString {
                     appendLine("数据来源：Twelve Data · XAU/USD")
                     for (tf in timeframes) {
