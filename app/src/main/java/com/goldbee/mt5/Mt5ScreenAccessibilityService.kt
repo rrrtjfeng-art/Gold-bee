@@ -5,6 +5,7 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import com.goldbee.paper.PaperTradeMonitor
 
 /**
  * Read-only observer for the official MT5 Android package.
@@ -53,6 +54,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             .putString(KEY_ASK, observation.ask?.toString().orEmpty())
             .putInt(KEY_TEXT_COUNT, observation.visibleTextCount)
             .apply()
+        PaperTradeMonitor.checkAndUpdate(this)
     }
 
     private fun collectNodeText(
