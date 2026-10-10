@@ -171,11 +171,11 @@ class MainActivity : AppCompatActivity() {
                     val ageMillis = (System.currentTimeMillis() - lastTickAt).coerceAtLeast(0L)
                     if (ageMillis > LIVE_TICK_MAX_AGE_MS) {
                         liveFeedStatusText.text =
-                            "状态：连接仍存在，但报价已过期（\${ageMillis / 1000} 秒）；旧报价不可用于当前分析。"
+                            "状态：连接仍存在，但报价已过期（${ageMillis / 1000} 秒）；旧报价不可用于当前分析。"
                         liveFeedStatusText.setTextColor(red)
                     } else {
                         liveFeedStatusText.text =
-                            "状态：实时订阅正常 · 最近报价 \${ageMillis} 毫秒前收到"
+                            "状态：实时订阅正常 · 最近报价 ${ageMillis} 毫秒前收到"
                         liveFeedStatusText.setTextColor(green)
                     }
                 }
