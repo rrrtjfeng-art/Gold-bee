@@ -19,6 +19,7 @@ import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.StrategyBacktester
 import com.goldbee.analysis.TakeProfitPlanner
+import com.goldbee.analysis.TakeProfitStyle
 import com.goldbee.analysis.MultiTimeframeAnalysis
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
@@ -143,11 +144,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var decisionText: TextView
     private lateinit var decisionReasonText: TextView
     private lateinit var paperTradeText: TextView
+    private lateinit var paperTpStatusText: TextView
+    private lateinit var paperTpSmallButton: Button
+    private lateinit var paperTpMediumButton: Button
+    private lateinit var paperTpLargeButton: Button
     private lateinit var paperBalanceInput: EditText
     private lateinit var paperLotSizeInput: EditText
     private lateinit var paperContractSizeInput: EditText
     private lateinit var paperCommissionInput: EditText
     private var paperAccountCurrency: String = "USD"
+    private var selectedPaperTpStyle: TakeProfitStyle = TakeProfitStyle.SMALL
+    private var pendingRealSignalBase: PaperSignal? = null
     private var pendingPaperSignal: PaperSignal? = null
     private lateinit var copySignalInput: EditText
     private lateinit var copyResultText: TextView
@@ -347,7 +354,7 @@ class MainActivity : AppCompatActivity() {
         return view
     }
 
-    private fun addButton(parent: LinearLayout, value: String, primary: Boolean = false, action: () -> Unit) {
+    private fun addButton(parent: LinearLayout, value: String, primary: Boolean = false, action: () -> Unit): Button {
         val button = Button(this).apply {
             text = value
             isAllCaps = false
@@ -357,6 +364,7 @@ class MainActivity : AppCompatActivity() {
             setOnClickListener { action() }
         }
         parent.addView(button, LinearLayout.LayoutParams(0, dp(48), 1f).apply { marginEnd = dp(6) })
+        return button
     }
 
     private fun makeNumericInput(value: String, hintText: String): EditText =
@@ -645,6 +653,24 @@ class MainActivity : AppCompatActivity() {
             gold
         )
         addButton(decision, "用 MT5 当前报价分析 REAL 信号", true) { analyzeRealFromMt5Screen() }
+        addLabel(decision, "REAL 止盈目标（XAUUSD 价格距离，不是保证收益）", 13f, white, true)
+        val tpRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        paperTpSmallButton = addButton(tpRow, "小赚 +2.00", selectedPaperTpStyle == TakeProfitStyle.SMALL) {
+            selectPaperTpStyle(TakeProfitStyle.SMALL)
+        }
+        paperTpMediumButton = addButton(tpRow, "中赚 +5.00", selectedPaperTpStyle == TakeProfitStyle.MEDIUM) {
+            selectPaperTpStyle(TakeProfitStyle.MEDIUM)
+        }
+        paperTpLargeButton = addButton(tpRow, "大赚 +10.00", selectedPaperTpStyle == TakeProfitStyle.LARGE) {
+            selectPaperTpStyle(TakeProfitStyle.LARGE)
+        }
+        decision.addView(tpRow)
+        paperTpStatusText = addLabel(
+            decision,
+            "默认选择小赚 TP +2.00。只有计入当前 MT5 点差后净盈亏比达到 1.0，才允许确认模拟单。",
+            11f,
+            muted
+        )
         addLabel(decision, "模拟账户参数", 14f, white, true)
         addLabel(
             decision,
@@ -1046,6 +1072,71 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    private fun selectPaperTpStyle(style: TakeProfitStyle) {
+        selectedPaperTpStyle = style
+        refreshTpStyleButtons()
+        updatePendingRealTakeProfit()
+    }
+
+    private fun refreshTpStyleButtons() {
+        if (!::paperTpSmallButton.isInitialized) return
+        val styles = listOf(
+            paperTpSmallButton to TakeProfitStyle.SMALL,
+            paperTpMediumButton to TakeProfitStyle.MEDIUM,
+            paperTpLargeButton to TakeProfitStyle.LARGE
+        )
+        styles.forEach { (button, style) ->
+            val selected = style == selectedPaperTpStyle
+            button.setBackgroundColor(if (selected) gold else Color.rgb(39, 46, 59))
+            button.setTextColor(if (selected) bg else white)
+        }
+    }
+
+    private fun updatePendingRealTakeProfit() {
+        if (!::paperTpStatusText.isInitialized) return
+        val base = pendingRealSignalBase
+        if (base == null || base.source != "REAL") {
+            paperTpStatusText.text = "TP 风格只影响 REAL 模式；COPY 信号保留原始 TP。当前选择：${selectedPaperTpStyle.label} +${fmt(selectedPaperTpStyle.priceDistance)}。"
+            paperTpStatusText.setTextColor(muted)
+            return
+        }
+        val target = runCatching {
+            TakeProfitPlanner.targets(base.direction, base.plannedEntry, base.stopLoss)
+                .first { it.style == selectedPaperTpStyle }
+        }.getOrNull()
+        if (target == null) {
+            pendingPaperSignal = null
+            paperTpStatusText.text = "所选 TP 无法根据当前 Entry/SL 计算；不能开模拟单。"
+            paperTpStatusText.setTextColor(red)
+            return
+        }
+        val selectedSignal = base.copy(takeProfit = target.price)
+        pendingPaperSignal = selectedSignal
+        val quote = readFreshPaperQuote()
+        val now = System.currentTimeMillis()
+        if (quote == null || now - quote.timestampMillis !in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS ||
+            quote.ask <= quote.bid
+        ) {
+            paperTpStatusText.text = "已选择 ${target.style.label} TP ${fmt(target.price)}（距离 ${fmt(target.distance)}，约 ${fmt(target.estimatedPips)} pips）。当前 MT5 报价不够新，暂不能验证净盈亏比；确认时会再次拦截。"
+            paperTpStatusText.setTextColor(gold)
+            return
+        }
+        val entry = if (base.direction == TradeDirection.BUY) quote.ask else quote.bid
+        val risk = kotlin.math.abs(entry - base.stopLoss)
+        val reward = kotlin.math.abs(target.price - entry)
+        val netReward = reward - quote.spread
+        val netRisk = risk + quote.spread
+        val netRr = if (netRisk > 0.0) netReward / netRisk else Double.NaN
+        if (!risk.isFinite() || risk <= 0.0 || !netRr.isFinite() || netReward <= 0.0 || netRr < 1.0) {
+            pendingPaperSignal = null
+            paperTpStatusText.text = "NO TRADE：${target.style.label} TP ${fmt(target.price)} 在当前点差下净盈亏比不足 1.0（估算 ${fmt(netRr)}）。请改选更远 TP 或放弃交易。"
+            paperTpStatusText.setTextColor(red)
+            return
+        }
+        paperTpStatusText.text = "已选 ${target.style.label} TP：${fmt(target.price)} · 距离 ${fmt(target.distance)}（约 ${fmt(target.estimatedPips)} pips）· 当前点差后净 R:R 1:${fmt(netRr)}。模拟开仓仍需再次通过价格和风险检查。"
+        paperTpStatusText.setTextColor(green)
     }
 
     private fun analyzeRealFromMt5Screen() {
