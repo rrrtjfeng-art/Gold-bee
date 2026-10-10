@@ -26,6 +26,10 @@ import com.goldbee.decision.DecisionResult
 import com.goldbee.decision.TradeDecisionGate
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
+import com.goldbee.market.GoldPriceDevWebSocketClient
+import com.goldbee.market.MarketFeedController
+import com.goldbee.market.MarketTick
+import com.goldbee.market.MarketTickListener
 import com.goldbee.market.MarketSnapshot
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
@@ -58,6 +62,53 @@ class MainActivity : AppCompatActivity() {
     private val prefs by lazy { getSharedPreferences("gold_bee_settings", MODE_PRIVATE) }
 
     private lateinit var apiKeyInput: EditText
+    private lateinit var goldPriceKeyInput: EditText
+    private lateinit var liveFeedStatusText: TextView
+    private lateinit var liveFeedQuoteText: TextView
+    private var liveFeedClient: GoldPriceDevWebSocketClient? = null
+    private val liveFeedController = MarketFeedController()
+    private val liveFeedListener = object : MarketTickListener {
+        override fun onTick(tick: MarketTick) {
+            val accepted = liveFeedController.submitTick(tick)
+            handler.post {
+                if (!::liveFeedQuoteText.isInitialized) return@post
+                liveFeedQuoteText.text = if (accepted) {
+                    String.format(Locale.US, "XAUUSD Bid %.2f · Ask %.2f · Spread %.2f", tick.bid, tick.ask, tick.spread) +
+                        "\n源时间：" + SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(tick.timestamp))
+                } else {
+                    "收到报价，但未通过行情新鲜度或品种检查；不可用于进场。"
+                }
+                liveFeedQuoteText.setTextColor(if (accepted) green else gold)
+            }
+        }
+
+        override fun onConnected(source: String) {
+            handler.post {
+                if (::liveFeedStatusText.isInitialized) {
+                    liveFeedStatusText.text = "状态：服务器已确认黄金行情订阅 · $source"
+                    liveFeedStatusText.setTextColor(green)
+                }
+            }
+        }
+
+        override fun onDisconnected(source: String) {
+            handler.post {
+                if (::liveFeedStatusText.isInitialized) {
+                    liveFeedStatusText.text = "状态：实时行情已断开 · $source"
+                    liveFeedStatusText.setTextColor(gold)
+                }
+            }
+        }
+
+        override fun onError(source: String, message: String) {
+            handler.post {
+                if (::liveFeedStatusText.isInitialized) {
+                    liveFeedStatusText.text = "行情错误：$message"
+                    liveFeedStatusText.setTextColor(red)
+                }
+            }
+        }
+    }
     private lateinit var twelveDataKeyInput: EditText
     private lateinit var statusText: TextView
     private lateinit var priceText: TextView
@@ -294,6 +345,58 @@ class MainActivity : AppCompatActivity() {
         addButton(saveRow, "刷新参考数据") { fetchPrice() }
         settings.addView(saveRow)
         root.addView(settings)
+
+        val liveFeedCard = makeCard()
+        addLabel(liveFeedCard, "实时黄金行情连接（可选）", 17f, white, true)
+        addLabel(
+            liveFeedCard,
+            "使用 GoldPrice.dev WebSocket。连续实时流需要供应商允许的套餐与 API Key；不要把延迟 REST 报价当成实时价格。此连接只接收行情，不自动下单，也不会单独产生 BUY/SELL 建议。",
+            11f,
+            muted
+        )
+        goldPriceKeyInput = makeSecretInput("输入 GoldPrice.dev API Key")
+        if (EncryptedApiKeyStore.get(this, "goldprice_dev_api_key").isNotBlank()) {
+            goldPriceKeyInput.hint = "GoldPrice.dev Key 已安全保存；留空继续使用"
+        }
+        liveFeedCard.addView(goldPriceKeyInput, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) })
+        liveFeedStatusText = addLabel(liveFeedCard, "状态：尚未连接实时行情", 12f, gold)
+        liveFeedQuoteText = addLabel(liveFeedCard, "Bid：— · Ask：— · Spread：—", 13f, white)
+        val liveFeedButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(liveFeedButtons, "保存实时行情 Key") {
+            val entered = goldPriceKeyInput.text.toString().trim()
+            if (entered.isNotBlank()) {
+                EncryptedApiKeyStore.save(this, "goldprice_dev_api_key", entered)
+                goldPriceKeyInput.text.clear()
+                goldPriceKeyInput.hint = "实时行情 Key 已安全保存；留空继续使用"
+                liveFeedStatusText.text = "状态：Key 已加密保存。请确认该 Key 已开通实时流权限后连接。"
+                liveFeedStatusText.setTextColor(gold)
+            } else {
+                liveFeedStatusText.text = "请先输入 API Key；空白内容不会覆盖已保存的 Key。"
+                liveFeedStatusText.setTextColor(red)
+            }
+        }
+        addButton(liveFeedButtons, "连接实时行情", true) {
+            val savedKey = EncryptedApiKeyStore.get(this, "goldprice_dev_api_key")
+            if (savedKey.isBlank()) {
+                liveFeedStatusText.text = "状态：请先保存 GoldPrice.dev API Key。"
+                liveFeedStatusText.setTextColor(red)
+            } else if (liveFeedClient == null) {
+                liveFeedStatusText.text = "状态：正在连接；等待服务器确认订阅。"
+                liveFeedStatusText.setTextColor(gold)
+                liveFeedClient = GoldPriceDevWebSocketClient(savedKey, liveFeedListener)
+                if (liveFeedClient?.connect() != true) liveFeedClient = null
+            } else {
+                liveFeedStatusText.text = "状态：连接已启动；等待订阅确认或服务端错误。"
+            }
+        }
+        addButton(liveFeedButtons, "断开") {
+            liveFeedClient?.disconnect()
+            liveFeedClient = null
+            liveFeedStatusText.text = "状态：已由你断开实时行情连接。"
+            liveFeedStatusText.setTextColor(muted)
+        }
+        liveFeedCard.addView(liveFeedButtons)
+        root.addView(liveFeedCard)
 
         val statusCard = makeCard()
         addLabel(statusCard, "连接状态", 14f, muted, true)
@@ -837,6 +940,8 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         polling = false
         handler.removeCallbacks(pollRunnable)
+        liveFeedClient?.disconnect()
+        liveFeedClient = null
         ioExecutor.shutdownNow()
         super.onDestroy()
     }
