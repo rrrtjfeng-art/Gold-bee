@@ -812,6 +812,8 @@ class MainActivity : AppCompatActivity() {
 
     private fun evaluateCopySignal() {
         pendingPaperSignal = null
+        pendingRealSignalBase = null
+        updatePendingRealTakeProfit()
         val parsed = CopySignalParser.parse(copySignalInput.text.toString())
         val signal = parsed.getOrNull()
         if (signal == null) {
@@ -1245,7 +1247,7 @@ class MainActivity : AppCompatActivity() {
     private fun showDecision(decision: DecisionResult) {
         if (decision.action == DecisionAction.BUY || decision.action == DecisionAction.SELL) {
             val setup = decision.setup
-            pendingPaperSignal = if (setup == null) null else PaperSignal(
+            pendingRealSignalBase = if (setup == null) null else PaperSignal(
                 direction = if (decision.action == DecisionAction.BUY) TradeDirection.BUY else TradeDirection.SELL,
                 plannedEntry = setup.entry,
                 stopLoss = setup.stopLoss,
@@ -1253,12 +1255,16 @@ class MainActivity : AppCompatActivity() {
                 source = "REAL",
                 createdAtMillis = System.currentTimeMillis()
             )
+            pendingPaperSignal = pendingRealSignalBase
+            updatePendingRealTakeProfit()
             if (pendingPaperSignal != null && ::paperTradeText.isInitialized) {
-                paperTradeText.text = "REAL 信号已生成。点击“确认信号并开模拟单”后，系统会重新核对最新 MT5 Bid/Ask。"
+                paperTradeText.text = "REAL 信号已生成。当前 TP 风格需通过净盈亏比检查；确认后只开模拟单。"
                 paperTradeText.setTextColor(gold)
             }
         } else {
+            pendingRealSignalBase = null
             pendingPaperSignal = null
+            updatePendingRealTakeProfit()
         }
         decisionText.text = decision.action.name
         decisionText.setTextColor(
