@@ -13,12 +13,15 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.MultiTimeframeAnalysis
-import com.goldbee.analysis.MultiTimeframeDecisionEngine
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
 import com.goldbee.decision.CopySignalParser
+import com.goldbee.decision.DecisionAction
+import com.goldbee.decision.DecisionResult
+import com.goldbee.decision.TradeDecisionGate
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
+import com.goldbee.market.MarketSnapshot
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
 import com.goldbee.market.Timeframe
@@ -57,6 +60,7 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var latestCandles: Map<Timeframe, List<Candle>> = emptyMap()
     @Volatile private var latestAnalysis: MultiTimeframeAnalysis? = null
     @Volatile private var lastQuotePrice: Double? = null
+    @Volatile private var latestQuote: RealMarketPrice? = null
     @Volatile private var lastQuoteReceivedAt: Long = 0L
     private var polling = false
     private var requestInProgress = false
@@ -384,6 +388,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showPrice(q: RealMarketPrice) {
+        latestQuote = q
         lastQuotePrice = q.close
         lastQuoteReceivedAt = System.currentTimeMillis()
         statusText.text = "状态：已取得实时行情响应"
@@ -432,7 +437,39 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val analysis = MultiTimeframeAnalyzer.analyze(candleMap)
-                val decision = MultiTimeframeDecisionEngine.decide(candleMap, analysis)
+                val quoteForDecision = latestQuote
+                val quoteReceivedAt = lastQuoteReceivedAt
+                val snapshot = quoteForDecision?.let { quote ->
+                    val bid = quote.bid
+                    val ask = quote.ask
+                    if (bid != null && ask != null) {
+                        MarketSnapshot(
+                            symbol = quote.symbol,
+                            bid = bid,
+                            ask = ask,
+                            timestamp = quoteReceivedAt,
+                            candles = candleMap.toMap(),
+                            source = "RealMarketAPI",
+                            receivedAt = quoteReceivedAt
+                        )
+                    } else {
+                        null
+                    }
+                }
+                val decision = if (snapshot == null) {
+                    DecisionResult(
+                        action = DecisionAction.NO_TRADE,
+                        setup = null,
+                        confidence = 0.0,
+                        reason = "NO TRADE：接口未提供有效 Bid/Ask。刷新报价并确认双边报价后，才允许通过风险检查。"
+                    )
+                } else {
+                    TradeDecisionGate.evaluate(
+                        snapshot = snapshot,
+                        analysis = analysis,
+                        candles = candleMap
+                    ).decision
+                }
                 latestCandles = candleMap.toMap()
                 latestAnalysis = analysis
                 val rendered = buildString {
