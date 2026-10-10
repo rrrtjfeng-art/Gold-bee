@@ -27,6 +27,7 @@ import com.goldbee.market.RealMarketRestClient
 import com.goldbee.market.Timeframe
 import com.goldbee.settings.ApiKeyStore
 import com.goldbee.settings.EncryptedApiKeyStore
+import com.goldbee.risk.RiskStateStore
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -57,6 +58,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var decisionReasonText: TextView
     private lateinit var copySignalInput: EditText
     private lateinit var copyResultText: TextView
+    private lateinit var riskLossInput: EditText
+    private lateinit var riskStatusText: TextView
     @Volatile private var latestCandles: Map<Timeframe, List<Candle>> = emptyMap()
     @Volatile private var latestAnalysis: MultiTimeframeAnalysis? = null
     @Volatile private var lastQuotePrice: Double? = null
@@ -232,6 +235,48 @@ class MainActivity : AppCompatActivity() {
         )
         root.addView(decision)
 
+        val riskCard = makeCard()
+        addLabel(riskCard, "风险记录（手动同步 MT5 结果）", 17f, white, true)
+        addLabel(
+            riskCard,
+            "应用无法读取 MT5 账户成交与盈亏。每笔结束后，请按账户余额百分比手动记录；没有记录的结果不会自动计入。记录仅用于本机的风险闸门。",
+            11f,
+            muted
+        )
+        riskStatusText = addLabel(riskCard, "", 13f, white)
+        riskLossInput = EditText(this).apply {
+            hint = "本笔亏损占账户百分比，例如 0.5"
+            setHintTextColor(muted)
+            setTextColor(white)
+            textSize = 14f
+            inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL
+            setPadding(dp(12), dp(10), dp(12), dp(10))
+            setBackgroundColor(Color.rgb(31, 37, 49))
+        }
+        riskCard.addView(
+            riskLossInput,
+            LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) }
+        )
+        val riskRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(riskRow, "记录亏损", true) {
+            val loss = riskLossInput.text.toString().trim().toDoubleOrNull()
+            if (loss == null || !loss.isFinite() || loss <= 0.0 || loss > 100.0) {
+                riskStatusText.text = "输入无效：请输入大于 0 且不超过 100 的账户亏损百分比。"
+                riskStatusText.setTextColor(red)
+            } else {
+                RiskStateStore.recordLoss(this, loss)
+                riskLossInput.text.clear()
+                refreshRiskStatus()
+            }
+        }
+        addButton(riskRow, "记录盈利") {
+            RiskStateStore.recordWin(this)
+            refreshRiskStatus()
+        }
+        riskCard.addView(riskRow)
+        root.addView(riskCard)
+        refreshRiskStatus()
+
         val copyCard = makeCard()
         addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
         addLabel(
@@ -402,7 +447,8 @@ class MainActivity : AppCompatActivity() {
                     val gated = TradeDecisionGate.evaluate(
                         snapshot = snapshot,
                         analysis = analysis,
-                        candles = candles
+                        candles = candles,
+                        riskState = RiskStateStore.get(this)
                     )
                     showDecision(gated.decision)
                 }
@@ -444,6 +490,19 @@ class MainActivity : AppCompatActivity() {
                 setup.reason
             )
         }
+    }
+
+    private fun refreshRiskStatus() {
+        val state = RiskStateStore.get(this)
+        riskStatusText.text = String.format(
+            Locale.US,
+            "今日已记录亏损：%.2f%%\n连续亏损：%d 笔\n闸门限制：单日亏损达到 3%% 或连续亏损达到 3 笔后，REAL 信号将被拦截。",
+            state.dailyLossPercent,
+            state.consecutiveLosses
+        )
+        riskStatusText.setTextColor(
+            if (state.dailyLossPercent >= 3.0 || state.consecutiveLosses >= 3) red else white
+        )
     }
 
     private fun getRealMarketKey(): String {
