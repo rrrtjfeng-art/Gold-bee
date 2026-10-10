@@ -787,13 +787,13 @@ class MainActivity : AppCompatActivity() {
         addLabel(analysis, "多周期技术分析", 17f, white, true)
         analysisText = addLabel(
             analysis,
-            "尚未加载历史 K 线。加载 M5、M15、H1 后计算 EMA、RSI、MACD、ADX、ATR 与支撑阻力。",
+            "这里会用 5 分钟、15 分钟和 1 小时图交叉检查趋势、动能、波动和支撑/阻力。先加载历史 K 线；指标只是分析依据，不是预测未来的保证。",
             12f,
             white
         )
         addLabel(
             analysis,
-            "回测成本假设（XAUUSD 价格美元/每笔往返）：把点差、滑点及手续费折算成价格距离。0.00 表示完全未计成本，结果会偏乐观；请尽量按你的 MT5 实际成本填写。",
+            "回测成本（每笔完整开仓+平仓）：把点差、滑点和手续费估算成黄金价格距离。填 0 表示完全不扣成本，结果会明显偏乐观。尽量按你的 MT5 实际成本填写。",
             11f,
             muted
         )
@@ -822,7 +822,9 @@ class MainActivity : AppCompatActivity() {
         historyPage.addView(analysis)
 
         val decision = makeCard()
-        addLabel(decision, "研究信号（未回测）", 17f, white, true)
+        addLabel(decision, "模拟交易台", 19f, white, true)
+        addLabel(decision, "新手流程：① 在行情页加载历史 K 线 ② 分析 MT5 当前报价 ③ 核对 Entry、SL、TP 与手数 ④ 点击确认后才建立本地模拟单。这里不会发送真实订单。", 12f, white)
+        addLabel(decision, "先理解风险：模拟盈利不代表实盘一定盈利。点差、佣金、滑点和经纪商合约规格都会影响结果。", 11f, gold)
         decisionText = addLabel(decision, "NO TRADE", 25f, red, true)
         decisionReasonText = addLabel(decision, "先加载 M5/M15/H1 历史 K 线，再用 MT5 屏幕当前 Bid/Ask 生成 REAL 判断。参考行情不会单独作为可执行信号。", 12f, white)
         addLabel(
@@ -832,7 +834,7 @@ class MainActivity : AppCompatActivity() {
             gold
         )
         addButton(decision, "用 MT5 当前报价分析 REAL 信号", true) { analyzeRealFromMt5Screen() }
-        addLabel(decision, "REAL 止盈目标（XAUUSD 价格距离，不是保证收益）", 13f, white, true)
+        addLabel(decision, "选择止盈目标距离（黄金报价的价格变化，不是你账户会赚到的金额）", 13f, white, true)
         val tpRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         paperTpSmallButton = addButton(tpRow, "小赚 +2.00", selectedPaperTpStyle == TakeProfitStyle.SMALL) {
             selectPaperTpStyle(TakeProfitStyle.SMALL)
@@ -846,14 +848,14 @@ class MainActivity : AppCompatActivity() {
         decision.addView(tpRow)
         paperTpStatusText = addLabel(
             decision,
-            "默认选择小赚 TP +2.00。只有按实际 MT5 Bid/Ask 进场价并计入往返佣金后净盈亏比达到 1.0，才允许确认模拟单。",
+            "小目标 +2.00 / 中目标 +5.00 / 大目标 +10.00 指 XAUUSD 价格移动距离；实际盈亏还取决于手数、合约大小、点差和佣金。系统会按当前规则检查净盈亏比，但不保证目标会到达。",
             11f,
             muted
         )
-        addLabel(decision, "模拟账户参数", 14f, white, true)
+        addLabel(decision, "模拟账户设置（只影响本地模拟计算）", 14f, white, true)
         addLabel(
             decision,
-            "USD 与杠杆计算：按 XAUUSD 每手 100 盎司的常见规格估算；可修改黄金价格、手数和杠杆。这里显示名义价值与理论保证金，不代表经纪商实际保证金规则。",
+            "手数决定价格波动对盈亏的影响；合约大小决定 1 手代表多少盎司；杠杆影响理论保证金，不会降低交易本身的亏损。默认按每手 100 盎司估算，请核对你的 MT5 品种规格。",
             11f,
             gold
         )
@@ -896,7 +898,7 @@ class MainActivity : AppCompatActivity() {
         paperLeverageText = addLabel(decision, "当前模拟杠杆：1:2000", 12f, white, true)
         paperLotValueText = addLabel(
             decision,
-            "USD 计算：0.01 手 × 100 盎司/手 = 1 盎司；名义价值 = 金价 × 1 盎司；理论保证金 = 名义价值 ÷ 杠杆。",
+            "例：按每手 100 盎司计算，0.01 手约等于 1 盎司；黄金价格每变化 1.00 美元，理论盈亏约变化 1 美元（未扣点差/佣金）。理论保证金 ≈ 名义价值 ÷ 杠杆；经纪商规则可能不同。",
             12f,
             gold,
             true
@@ -940,7 +942,7 @@ class MainActivity : AppCompatActivity() {
         refreshPaperTradeStatus()
 
         val riskCard = makeCard()
-        addLabel(riskCard, "风险记录（手动同步 MT5 结果）", 17f, white, true)
+        addLabel(riskCard, "风险记录 · 手动登记真实交易结果", 17f, white, true)
         addLabel(
             riskCard,
             "应用无法读取 MT5 账户成交与盈亏。每笔结束后，请按账户余额百分比手动记录；没有记录的结果不会自动计入。记录仅用于本机的风险闸门。",
@@ -982,10 +984,10 @@ class MainActivity : AppCompatActivity() {
         refreshRiskStatus()
 
         val copyCard = makeCard()
-        addLabel(copyCard, "COPY · 外部信号审核", 17f, white, true)
+        addLabel(copyCard, "COPY · 检查别人发来的黄金信号", 17f, white, true)
         addLabel(
             copyCard,
-            "粘贴信号后，应用会检查方向、Entry、SL、TP、风险回报比、当前 MT5 屏幕报价、点差、价格距离和多周期趋势。没有新鲜且有效的 MT5 Bid/Ask 时，一律 NO TRADE。",
+            "把别人发来的 BUY/SELL 信号粘贴在下面。应用会检查是否写清 Entry（进场价）、SL（止损）、TP（止盈），再对照当前 MT5 报价，判断是否已经涨跌太远。缺少关键价格、报价过期或风险不合格时，不跟单。",
             11f,
             muted
         )
