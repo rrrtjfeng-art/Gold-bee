@@ -57,6 +57,9 @@ object CopySignalEvaluator {
         if (!levelsMatchDirection) {
             return noTrade(signal, "SL/TP 与信号方向不匹配，禁止跟随。")
         }
+        if (listOf(entry, stopLoss, takeProfit, currentPrice).any { !it.isFinite() || it <= 0.0 }) {
+            return noTrade(signal, "Entry、SL、TP 或当前报价包含无效价格。")
+        }
 
         // Do not approve a signal whose target or stop has already been
         // reached at the executable quote. The original setup is no longer live.
@@ -116,8 +119,10 @@ object CopySignalEvaluator {
             return noTrade(signal, "M15 K 线不足 50 根，无法重新验证信号。", distance)
         }
 
-        val stopDistance = abs(entry - stopLoss)
-        val targetDistance = abs(takeProfit - entry)
+        // The original Entry is only the anti-chasing reference. The plan's
+        // risk/reward must use the current executable quote, not stale signal Entry.
+        val stopDistance = abs(currentPrice - stopLoss)
+        val targetDistance = abs(takeProfit - currentPrice)
         val netReward = targetDistance - spread
         val netRisk = stopDistance + spread
         if (
@@ -149,7 +154,7 @@ object CopySignalEvaluator {
                 TradeDirection.SELL -> DecisionAction.SELL
             },
             signal = signal,
-            reason = "COPY 信号通过 Entry、SL/TP 方向、行情距离、点差、M15 方向和净盈亏比检查；通过审核不代表实际胜率。",
+            reason = "COPY 信号通过 Entry 距离、SL/TP 方向与有效性、点差、M15 方向和按当前可执行报价重算的净盈亏比检查；通过审核不代表实际胜率。",
             priceDistance = distance
         )
     }
