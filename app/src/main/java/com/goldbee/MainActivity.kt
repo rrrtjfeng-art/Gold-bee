@@ -1302,6 +1302,20 @@ class MainActivity : AppCompatActivity() {
                     appendLine("交易：${result.trades.size} · 盈利：${result.wins} · 亏损：${result.losses} · 胜率：${String.format(Locale.US, "%.1f", result.winRatePercent)}%")
                     appendLine("累计结果：${fmt(result.totalR)} R · 单笔期望：${fmt(result.expectancyR)} R · Profit Factor：$profitFactor")
                     appendLine("最大回撤：${fmt(result.maxDrawdownR)} R · 最长持仓：48 根 M5 K 线")
+                    appendLine("多空分布：BUY ${result.trades.count { it.direction == com.goldbee.decision.TradeDirection.BUY }} 笔 · SELL ${result.trades.count { it.direction == com.goldbee.decision.TradeDirection.SELL }} 笔")
+                    appendLine("最近交易明细（最多 10 笔，按时间顺序）：")
+                    if (result.trades.isEmpty()) {
+                        appendLine("没有符合当前策略条件的交易。")
+                    } else {
+                        result.trades.takeLast(10).forEach { trade ->
+                            val entryTime = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+                                .format(Date(trade.entryTimeSeconds * 1000L))
+                            val rText = String.format(Locale.US, "%+.2fR", trade.rMultiple)
+                            appendLine(
+                                "$entryTime ${trade.direction} · 入场 ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)} · 出场 ${fmt(trade.exitPrice)} · $rText · ${trade.exitType}"
+                            )
+                        }
+                    }
                     appendLine("回放规则：信号使用当时已收盘的 M5/M15/H1 K 线；下一根 M5 开盘进场；同一根 K 线同时触及止损和止盈时，按止损先发生。")
                     appendLine("尚未计入：Bid/Ask 点差、滑点、佣金、执行延迟、拒单与经纪商价格差异。")
                     if (result.sampleIsTooSmall) {
