@@ -398,8 +398,17 @@ class MainActivity : AppCompatActivity() {
                 liveFeedStatusText.setTextColor(gold)
                 liveFeedClient = GoldPriceDevWebSocketClient(savedKey, liveFeedListener)
                 if (liveFeedClient?.connect() != true) liveFeedClient = null
+            } else if (liveFeedClient?.isConnected() == true) {
+                liveFeedStatusText.text = "状态：实时行情订阅已确认；正在接收或等待下一条行情。"
+                liveFeedStatusText.setTextColor(green)
             } else {
-                liveFeedStatusText.text = "状态：连接已启动；等待订阅确认或服务端错误。"
+                val retryStarted = liveFeedClient?.connect() == true
+                liveFeedStatusText.text = if (retryStarted) {
+                    "状态：重新连接请求已启动；等待服务器确认订阅。"
+                } else {
+                    "状态：无法启动连接；请检查网络、API Key 和套餐权限。"
+                }
+                liveFeedStatusText.setTextColor(if (retryStarted) gold else red)
             }
         }
         addButton(liveFeedButtons, "断开") {

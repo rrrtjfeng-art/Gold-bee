@@ -7,17 +7,21 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONArray
 import org.json.JSONObject
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.ThreadLocalRandom
 import java.util.concurrent.TimeUnit
 
 /**
  * Optional adapter for GoldPrice.dev's documented authenticated WebSocket.
  *
- * A valid API key with streaming entitlement is required. This class never
- * treats an open TCP/WebSocket connection as a ready market feed: it reports
- * connected only after the provider confirms the XAU subscription.
+ * A valid API key with streaming entitlement is required. A connection is
+ * considered ready only after the provider confirms the XAU subscription.
+ * Transient disconnects are retried with exponential backoff and jitter;
+ * invalid credentials, missing entitlement and connection-limit errors are
+ * terminal until the user changes the key/plan or frees a connection.
  *
- * The caller remains responsible for submitting ticks to MarketFeedController
- * and checking freshness before any actionable decision.
+ * This class only receives market data. It never places or modifies orders.
  */
 class GoldPriceDevWebSocketClient(
     private val apiKey: String,
@@ -30,6 +34,13 @@ class GoldPriceDevWebSocketClient(
     private val source = GoldPriceDevTickParser.SOURCE
     @Volatile private var socket: WebSocket? = null
     @Volatile private var subscriptionConfirmed = false
+    @Volatile private var userRequestedDisconnect = true
+    @Volatile private var terminalFailure = false
+    private var reconnectAttempt = 0
+    private var reconnectFuture: ScheduledFuture<*>? = null
+    private val reconnectScheduler = Executors.newSingleThreadScheduledExecutor { runnable ->
+        Thread(runnable, "GoldBee-WebSocket-Reconnect").apply { isDaemon = true }
+    }
 
     @Synchronized
     fun connect(): Boolean {
@@ -37,47 +48,73 @@ class GoldPriceDevWebSocketClient(
             listener.onError(source, "未设置 GoldPrice.dev API Key")
             return false
         }
+        userRequestedDisconnect = false
+        terminalFailure = false
+        reconnectAttempt = 0
+        cancelReconnectLocked()
         if (socket != null) return true
+        return openSocketLocked()
+    }
 
+    @Synchronized
+    private fun openSocketLocked(): Boolean {
+        if (socket != null) return true
         val request = Request.Builder()
             .url("wss://api.goldprice.dev/v1/stream")
             .build()
 
-        socket = client.newWebSocket(request, object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
-                webSocket.send(JSONObject()
-                    .put("action", "auth")
-                    .put("api_key", apiKey)
-                    .toString())
-            }
-
-            override fun onMessage(webSocket: WebSocket, text: String) {
-                handleMessage(webSocket, text)
-            }
-
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                subscriptionConfirmed = false
-                synchronized(this@GoldPriceDevWebSocketClient) {
-                    if (socket === webSocket) socket = null
+        return try {
+            socket = client.newWebSocket(request, object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    val sent = webSocket.send(
+                        JSONObject()
+                            .put("action", "auth")
+                            .put("api_key", apiKey)
+                            .toString()
+                    )
+                    if (!sent) {
+                        listener.onError(source, "发送行情认证请求失败")
+                        webSocket.close(1011, "Authentication frame could not be sent")
+                    }
                 }
-                listener.onDisconnected(source)
-                listener.onError(source, t.message ?: "行情 WebSocket 连接失败")
-            }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                subscriptionConfirmed = false
-                synchronized(this@GoldPriceDevWebSocketClient) {
-                    if (socket === webSocket) socket = null
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    handleMessage(webSocket, text)
                 }
-                listener.onDisconnected(source)
-                if (reason.isNotBlank()) listener.onError(source, "行情连接关闭：$reason")
-            }
-        })
-        return true
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    handleSocketEnded(
+                        webSocket = webSocket,
+                        closeCode = null,
+                        httpStatusCode = response?.code,
+                        errorMessage = response?.code?.let { "行情服务 HTTP $it" }
+                            ?: t.message ?: "行情 WebSocket 连接失败"
+                    )
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    handleSocketEnded(
+                        webSocket = webSocket,
+                        closeCode = code,
+                        errorMessage = reason.takeIf { it.isNotBlank() }?.let { "行情连接关闭：$it" }
+                    )
+                }
+            })
+            true
+        } catch (error: Exception) {
+            socket = null
+            listener.onError(source, error.message ?: "无法创建行情 WebSocket")
+            scheduleReconnect()
+            // Keep the client instance reachable so the user can cancel retries.
+            true
+        }
     }
 
     @Synchronized
     fun disconnect() {
+        userRequestedDisconnect = true
+        terminalFailure = false
+        cancelReconnectLocked()
         val current = socket
         socket = null
         subscriptionConfirmed = false
@@ -85,7 +122,37 @@ class GoldPriceDevWebSocketClient(
         listener.onDisconnected(source)
     }
 
-    fun isConnected(): Boolean = subscriptionConfirmed
+    fun isConnected(): Boolean = subscriptionConfirmed && socket != null
+
+    private fun handleSocketEnded(
+        webSocket: WebSocket,
+        closeCode: Int?,
+        errorMessage: String?,
+        httpStatusCode: Int? = null
+    ) {
+        val wasCurrent = synchronized(this) {
+            if (socket !== webSocket) {
+                false
+            } else {
+                socket = null
+                subscriptionConfirmed = false
+                if (!WebSocketReconnectPolicy.shouldRetry(
+                        closeCode = closeCode,
+                        httpStatusCode = httpStatusCode
+                    )
+                ) {
+                    terminalFailure = true
+                }
+                true
+            }
+        }
+
+        // A callback from an obsolete socket must not override a newer connection.
+        if (!wasCurrent) return
+        listener.onDisconnected(source)
+        if (errorMessage != null) listener.onError(source, errorMessage)
+        scheduleReconnect(closeCode = closeCode, httpStatusCode = httpStatusCode)
+    }
 
     private fun handleMessage(webSocket: WebSocket, raw: String) {
         val frame = try {
@@ -102,6 +169,7 @@ class GoldPriceDevWebSocketClient(
                     .put("symbols", JSONArray().put(providerSymbol(symbol)))
                 if (!webSocket.send(subscribe.toString())) {
                     listener.onError(source, "发送订阅请求失败")
+                    webSocket.close(1011, "Subscription frame could not be sent")
                 }
             }
             "subscribed" -> {
@@ -111,9 +179,14 @@ class GoldPriceDevWebSocketClient(
                 }
                 if (confirmed) {
                     subscriptionConfirmed = true
+                    synchronized(this) {
+                        reconnectAttempt = 0
+                        cancelReconnectLocked()
+                    }
                     listener.onConnected(source)
                 } else {
                     listener.onError(source, "行情服务未确认 XAUUSD 订阅")
+                    webSocket.close(1011, "Expected XAUUSD subscription was not confirmed")
                 }
             }
             "tick" -> {
@@ -128,9 +201,53 @@ class GoldPriceDevWebSocketClient(
                 val code = frame.optString("code", "unknown")
                 val message = frame.optString("message", "行情服务返回错误")
                 subscriptionConfirmed = false
+                val terminal = !WebSocketReconnectPolicy.shouldRetry(errorCode = code)
+                synchronized(this) {
+                    terminalFailure = terminal
+                }
                 listener.onError(source, "$code：$message")
+                webSocket.close(
+                    if (terminal) 1000 else 1011,
+                    if (terminal) "Terminal provider error" else "Transient provider error"
+                )
             }
         }
+    }
+
+    @Synchronized
+    private fun scheduleReconnect(
+        closeCode: Int? = null,
+        httpStatusCode: Int? = null
+    ) {
+        if (
+            userRequestedDisconnect ||
+            terminalFailure ||
+            !WebSocketReconnectPolicy.shouldRetry(
+                closeCode = closeCode,
+                httpStatusCode = httpStatusCode
+            )
+        ) return
+        if (reconnectFuture?.isDone == false) return
+
+        val jitter = ThreadLocalRandom.current().nextLong(
+            0L,
+            WebSocketReconnectPolicy.MAX_JITTER_MS + 1L
+        )
+        val delay = WebSocketReconnectPolicy.delayMillis(reconnectAttempt, jitter)
+        reconnectAttempt += 1
+        reconnectFuture = reconnectScheduler.schedule({
+            synchronized(this@GoldPriceDevWebSocketClient) {
+                reconnectFuture = null
+                if (userRequestedDisconnect || terminalFailure || socket != null) return@schedule
+                openSocketLocked()
+            }
+        }, delay, TimeUnit.MILLISECONDS)
+    }
+
+    @Synchronized
+    private fun cancelReconnectLocked() {
+        reconnectFuture?.cancel(false)
+        reconnectFuture = null
     }
 
     private fun providerSymbol(value: String): String =
