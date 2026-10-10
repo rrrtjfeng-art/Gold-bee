@@ -840,9 +840,10 @@ class MainActivity : AppCompatActivity() {
         addButton(analysis, "回测当前策略") { runStrategyBacktest() }
         addButton(analysis, "训练参数并做样本外验证") { runStrategyTraining() }
         addButton(analysis, "分析各时段交易表现（马来西亚时间）") { runSessionPerformanceAnalysis() }
+        addButton(analysis, "按时段分别训练参数并验证") { runSessionSpecificTraining() }
         addLabel(
             analysis,
-            "时段分析会分别统计亚洲、伦敦活跃、欧美重叠和纽约后段的净 R、胜率、Profit Factor 与回撤。伦敦/纽约时段是宽泛的马来西亚时间研究区间，会受夏令时影响；结果不代表未来盈利。",
+            "按时段训练会对亚洲、伦敦活跃、欧美重叠和纽约后段分别进行参数筛选：前 70% 历史挑参数，后 30% 样本外验证，并测试双倍成本。时段是宽泛 MYT 区间，夏令时会改变伦敦/纽约对应时间。",
             10f,
             muted
         )
@@ -2390,6 +2391,84 @@ class MainActivity : AppCompatActivity() {
         decisionReasonText.text = decisionReasonText.text.toString() +
             "\n\n报价来源：MT5 屏幕读取，经你手动确认；报价年龄：${ageMillis} ms。" +
             "\n历史 K 线来源仍为 Twelve Data。信号未经充分回测，不保证盈利；应用不会自动下单。"
+    }
+
+    private fun runSessionSpecificTraining() {
+        val roundTripCostPrice = backtestCostInput.text.toString().trim().toDoubleOrNull()
+        if (roundTripCostPrice == null || !roundTripCostPrice.isFinite() || roundTripCostPrice < 0.0) {
+            backtestText.text = "无法训练时段策略：往返成本必须是大于或等于 0 的有效数字。"
+            backtestText.setTextColor(red)
+            return
+        }
+        val candles = latestCandles.mapValues { (_, series) -> series.toList() }
+        if (listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
+                candles[it].orEmpty().size < 50
+            }
+        ) {
+            backtestText.text = "无法训练时段策略：请先加载 M5、M15、H1 历史 K 线。M5 至少 180 根；短历史很难可靠比较各时段。"
+            backtestText.setTextColor(red)
+            return
+        }
+
+        backtestText.text = "正在分别训练 4 个时段（每个时段比较 12 组参数），再做样本外和双倍成本验证……"
+        backtestText.setTextColor(gold)
+        ioExecutor.execute {
+            try {
+                val windows = com.goldbee.analysis.SessionPerformanceAnalyzer.defaultWindows
+                val results = windows.map { window ->
+                    window to com.goldbee.analysis.StrategyTrainer.trainAndValidate(
+                        sourceCandles = candles,
+                        roundTripCostPrice = roundTripCostPrice,
+                        maxHoldBars = 48,
+                        trainingFraction = 0.70,
+                        sessionWindow = window
+                    )
+                }
+                val rendered = buildString {
+                    appendLine("Gold-bee 分时段参数研究 · MYT（UTC+8）")
+                    appendLine("每个时段独立比较 12 组参数；只用前 70% 历史选参数，后 30% 做样本外验证。")
+                    appendLine("成本：每笔往返 ${fmt(roundTripCostPrice)} 美元价格距离。")
+                    if (roundTripCostPrice == 0.0) {
+                        appendLine("警告：成本为 0，所有净结果均未扣成本；请不要把它当成实盘结果。")
+                    }
+                    appendLine()
+                    results.forEach { (window, result) ->
+                        fun stats(label: String, value: com.goldbee.analysis.BacktestResult): String {
+                            val pf = value.profitFactor?.let { fmt(it) } ?: "—"
+                            return "$label：交易 ${value.trades.size} · 胜率 ${fmt(value.winRatePercent)}% · 净期望 ${fmt(value.expectancyR)}R/笔 · 累计 ${fmt(value.totalR)}R · PF $pf · 回撤 ${fmt(value.maxDrawdownR)}R"
+                        }
+                        appendLine("【${window.label} ${window.startHourMy.toString().padStart(2, '0')}:00–${window.endHourMy.toString().padStart(2, '0')}:00】")
+                        appendLine("候选参数：${result.candidatesEvaluated}/12 · 最低评分：${result.selectedConfig.minimumScore} · 目标 R：1:${fmt(result.selectedConfig.targetR)}")
+                        appendLine(stats("训练段", result.training))
+                        appendLine(stats("样本外", result.validation))
+                        appendLine(stats("双倍成本", result.validationDoubleCost))
+                        appendLine(result.selectionNote)
+                        if (result.validation.sampleIsTooSmall || result.validationDoubleCost.sampleIsTooSmall) {
+                            appendLine("结论：样本外数据不足，暂时不能判定该时段有优势。")
+                        } else if (result.validation.expectancyR <= 0.0 ||
+                            (result.validation.profitFactor ?: 0.0) <= 1.0) {
+                            appendLine("结论：设定成本下样本外未通过，不把该时段当作有效盈利策略。")
+                        } else if (result.validationDoubleCost.expectancyR <= 0.0 ||
+                            (result.validationDoubleCost.profitFactor ?: 0.0) <= 1.0) {
+                            appendLine("结论：双倍成本下优势消失，策略可能对点差/滑点过于敏感。")
+                        } else {
+                            appendLine("结论：初步通过历史压力测试；仍需更长历史、真实 Bid/Ask 和模拟前向测试。")
+                        }
+                        appendLine()
+                    }
+                    appendLine("重要：参数搜索不是机器学习，也不能保证高频盈利。12 组候选和短历史会产生过拟合风险；先看样本外交易数、净期望、PF、回撤及双倍成本结果。")
+                }
+                runOnUiThread {
+                    backtestText.text = rendered
+                    backtestText.setTextColor(white)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    backtestText.text = "分时段训练失败：${error.message ?: "未知错误"}"
+                    backtestText.setTextColor(red)
+                }
+            }
+        }
     }
 
     private fun runSessionPerformanceAnalysis() {
