@@ -22,7 +22,8 @@ SYMBOLS = [s.strip() for s in os.getenv(
 ).split(",") if s.strip()]
 STATE_FILE = Path(os.getenv("PAPER_STATE_FILE", "goldbee-paper-state.json"))
 START_BALANCE = float(os.getenv("PAPER_START_BALANCE", "1000"))
-LOT_SIZE = float(os.getenv("PAPER_LOT_SIZE", "0.01"))
+LOT_SIZE = float(os.getenv("PAPER_LOT_SIZE", "0.01"))  # hard cap, not a fixed risk size
+RISK_PER_TRADE_PERCENT = float(os.getenv("PAPER_RISK_PER_TRADE_PERCENT", "0.25"))
 MAX_OPEN_TRADES = int(os.getenv("PAPER_MAX_OPEN_TRADES", "3"))
 MAX_DAILY_LOSS_PERCENT = float(os.getenv("PAPER_MAX_DAILY_LOSS_PERCENT", "1.5"))
 MIN_RR = float(os.getenv("PAPER_MIN_RR", "1.5"))
@@ -134,6 +135,27 @@ def check_positions():
                 close_position(position, position["tp"], "止盈触发（按目标价）")
 
 
+def risk_sized_lots(symbol, direction, entry, stop_loss):
+    """Risk-size a simulated position, capped by PAPER_LOT_SIZE; return 0 if unsafe."""
+    info = mt5.symbol_info(symbol)
+    if info is None or info.volume_step <= 0 or info.volume_min <= 0:
+        return 0.0
+    order_type = mt5.ORDER_TYPE_BUY if direction == "BUY" else mt5.ORDER_TYPE_SELL
+    one_lot_loss = mt5.order_calc_profit(order_type, symbol, 1.0, entry, stop_loss)
+    if one_lot_loss is None or not (one_lot_loss < 0):
+        return 0.0
+    risk_budget = max(0.0, float(state["balance"])) * RISK_PER_TRADE_PERCENT / 100.0
+    if risk_budget <= 0:
+        return 0.0
+    raw_lots = min(LOT_SIZE, risk_budget / abs(float(one_lot_loss)), info.volume_max)
+    # Round down to the broker's volume step; never round risk upward.
+    steps = int(raw_lots / info.volume_step + 1e-10)
+    lots = steps * info.volume_step
+    if lots + 1e-10 < info.volume_min:
+        return 0.0
+    return round(lots, 8)
+
+
 def scan_symbol(symbol):
     global paused
     if paused or len(state["positions"]) >= MAX_OPEN_TRADES:
@@ -177,9 +199,13 @@ def scan_symbol(symbol):
     if not (signal.stop_loss < entry < signal.take_profit if signal.direction == "BUY"
             else signal.take_profit < entry < signal.stop_loss):
         return
+    lots = risk_sized_lots(symbol, signal.direction, entry, signal.stop_loss)
+    if lots <= 0:
+        send(f"跳过 {symbol} {signal.direction}：最小模拟手数也会超过每笔风险上限，或 MT5 无法计算止损亏损。")
+        return
     position = {
         "symbol": symbol, "direction": signal.direction, "entry": entry,
-        "sl": signal.stop_loss, "tp": signal.take_profit, "lots": LOT_SIZE,
+        "sl": signal.stop_loss, "tp": signal.take_profit, "lots": lots,
         "opened_at": datetime.now(timezone.utc).isoformat(), "signal_bar": last_bar,
         "reason": signal.reason,
     }
