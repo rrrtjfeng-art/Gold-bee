@@ -839,9 +839,10 @@ class MainActivity : AppCompatActivity() {
         addButton(analysis, "加载历史数据并分析", true) { loadHistoricalAnalysis() }
         addButton(analysis, "回测当前策略") { runStrategyBacktest() }
         addButton(analysis, "训练参数并做样本外验证") { runStrategyTraining() }
+        addButton(analysis, "分析各时段交易表现（马来西亚时间）") { runSessionPerformanceAnalysis() }
         addLabel(
             analysis,
-            "训练会比较 12 组入场门槛与目标盈亏比，只用前 70% 历史段挑选参数，再用后 30% 做独立验证。它是参数网格搜索，不是自动学习或盈利保证。",
+            "时段分析会分别统计亚洲、伦敦活跃、欧美重叠和纽约后段的净 R、胜率、Profit Factor 与回撤。伦敦/纽约时段是宽泛的马来西亚时间研究区间，会受夏令时影响；结果不代表未来盈利。",
             10f,
             muted
         )
@@ -2389,6 +2390,69 @@ class MainActivity : AppCompatActivity() {
         decisionReasonText.text = decisionReasonText.text.toString() +
             "\n\n报价来源：MT5 屏幕读取，经你手动确认；报价年龄：${ageMillis} ms。" +
             "\n历史 K 线来源仍为 Twelve Data。信号未经充分回测，不保证盈利；应用不会自动下单。"
+    }
+
+    private fun runSessionPerformanceAnalysis() {
+        val roundTripCostPrice = backtestCostInput.text.toString().trim().toDoubleOrNull()
+        if (roundTripCostPrice == null || !roundTripCostPrice.isFinite() || roundTripCostPrice < 0.0) {
+            backtestText.text = "无法分析时段：往返成本必须是大于或等于 0 的有效数字。"
+            backtestText.setTextColor(red)
+            return
+        }
+        val candles = latestCandles.mapValues { (_, series) -> series.toList() }
+        if (listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1).any {
+                candles[it].orEmpty().size < 50
+            }
+        ) {
+            backtestText.text = "无法分析时段：请先加载 M5、M15、H1 历史 K 线。M5 建议至少 180 根；要比较时段，最好有数周到数月的数据。"
+            backtestText.setTextColor(red)
+            return
+        }
+
+        backtestText.text = "正在按马来西亚时间逐时段回放历史 K 线……数据越长，计算时间越久。"
+        backtestText.setTextColor(gold)
+        ioExecutor.execute {
+            try {
+                val sessions = com.goldbee.analysis.SessionPerformanceAnalyzer.analyze(
+                    sourceCandles = candles,
+                    roundTripCostPrice = roundTripCostPrice,
+                    maxHoldBars = 48
+                )
+                val rendered = buildString {
+                    appendLine("黄金时段表现报告 · MYT（UTC+8）")
+                    appendLine("每个时段独立统计；成本假设：每笔往返 ${fmt(roundTripCostPrice)} 美元价格距离。")
+                    if (roundTripCostPrice == 0.0) {
+                        appendLine("警告：成本为 0，净结果没有扣交易成本，明显可能偏乐观。")
+                    }
+                    appendLine("伦敦/纽约分组为宽泛研究区间，夏令时会改变实际开盘对应的马来西亚时间。")
+                    appendLine()
+                    sessions.forEach { s ->
+                        val pf = s.profitFactor?.let { fmt(it) } ?: "—"
+                        appendLine("${s.session.label}（${s.session.startHourMy.toString().padStart(2, '0')}:00–${s.session.endHourMy.toString().padStart(2, '0')}:00）")
+                        appendLine("有数据日：${s.calendarDays} · 交易：${s.trades} · 胜率：${fmt(s.winRatePercent)}%")
+                        appendLine("净期望：${fmt(s.expectancyR)}R/笔 · 累计：${fmt(s.totalR)}R · PF：$pf · 最大回撤：${fmt(s.maxDrawdownR)}R")
+                        if (s.needsMoreData) {
+                            appendLine("判断：样本不足（少于 30 笔或覆盖不足 7 个有数据日），不能据此判断时段优势。")
+                        } else if (s.expectancyR <= 0.0 || (s.profitFactor ?: 0.0) <= 1.0) {
+                            appendLine("判断：当前成本假设下未显示稳定优势，不应为了增加频率而硬做。")
+                        } else {
+                            appendLine("判断：历史初步为正，仍需双倍成本、不同月份和真实 Bid/Ask 压力测试。")
+                        }
+                        appendLine()
+                    }
+                    appendLine("注意：这些是现有策略按信号时间分组，不是针对每个时段单独训练出的策略。下一步应对各时段分别优化，并用后续样本外数据复核。")
+                }
+                runOnUiThread {
+                    backtestText.text = rendered
+                    backtestText.setTextColor(white)
+                }
+            } catch (error: Exception) {
+                runOnUiThread {
+                    backtestText.text = "时段分析失败：${error.message ?: "未知错误"}"
+                    backtestText.setTextColor(red)
+                }
+            }
+        }
     }
 
     private fun runStrategyTraining() {
