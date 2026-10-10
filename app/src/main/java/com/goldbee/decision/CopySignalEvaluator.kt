@@ -138,14 +138,14 @@ object CopySignalEvaluator {
             netReward <= 0.0 ||
             netRisk <= 0.0
         ) {
-            return noTrade(signal, "扣除点差后，复制信号没有有效的净风险收益。", distance)
+            return noTrade(signal, "按当前可执行报价计算后，复制信号没有有效的风险收益。", distance)
         }
 
         val estimatedNetRiskReward = netReward / netRisk
         if (!estimatedNetRiskReward.isFinite() || estimatedNetRiskReward < MIN_NET_RISK_REWARD) {
             return noTrade(
                 signal,
-                "复制信号扣除点差估算后净盈亏比仅 %.2f，低于最低要求 %.2f，拒绝跟随。"
+                "复制信号按当前可执行报价计算的盈亏比仅 %.2f，低于最低要求 %.2f，拒绝跟随。"
                     .format(estimatedNetRiskReward, MIN_NET_RISK_REWARD),
                 distance
             )
