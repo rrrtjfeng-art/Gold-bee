@@ -58,6 +58,28 @@ object CopySignalEvaluator {
             return noTrade(signal, "SL/TP 与信号方向不匹配，禁止跟随。")
         }
 
+        // Do not approve a signal whose target or stop has already been
+        // reached at the executable quote. The original setup is no longer live.
+        val signalAlreadyResolved = when (signal.direction) {
+            TradeDirection.BUY -> when {
+                currentPrice <= stopLoss ->
+                    "当前可执行价格已到达或跌破原信号 SL，信号已失效。"
+                currentPrice >= takeProfit ->
+                    "当前可执行价格已到达或超过原信号 TP，禁止重复追入。"
+                else -> null
+            }
+            TradeDirection.SELL -> when {
+                currentPrice >= stopLoss ->
+                    "当前可执行价格已到达或超过原信号 SL，信号已失效。"
+                currentPrice <= takeProfit ->
+                    "当前可执行价格已到达或跌破原信号 TP，禁止重复追入。"
+                else -> null
+            }
+        }
+        if (signalAlreadyResolved != null) {
+            return noTrade(signal, signalAlreadyResolved, abs(currentPrice - entry))
+        }
+
         if (!analysis.m15.available) {
             return noTrade(signal, "M15 数据不足，无法审核复制信号。")
         }
