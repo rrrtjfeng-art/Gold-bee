@@ -11,6 +11,50 @@ import org.junit.Test
 class StrategyBacktesterTest {
 
     @Test
+    fun excludesM15AndH1CandlesUntilTheirCloseTime() {
+        val m15 = candle(
+            high = 101.0,
+            low = 99.0,
+            open = 100.0,
+            close = 100.5,
+            timeframe = Timeframe.M15,
+            timestamp = 1_000L
+        )
+        assertTrue(
+            StrategyBacktester.completedCandlesAtOrBefore(
+                candles = listOf(m15),
+                timeframe = Timeframe.M15,
+                decisionTimeSeconds = 1_899L
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(m15),
+            StrategyBacktester.completedCandlesAtOrBefore(
+                candles = listOf(m15),
+                timeframe = Timeframe.M15,
+                decisionTimeSeconds = 1_900L
+            )
+        )
+
+        val h1 = m15.copy(timeframe = Timeframe.H1)
+        assertTrue(
+            StrategyBacktester.completedCandlesAtOrBefore(
+                candles = listOf(h1),
+                timeframe = Timeframe.H1,
+                decisionTimeSeconds = 4_599L
+            ).isEmpty()
+        )
+        assertEquals(
+            listOf(h1),
+            StrategyBacktester.completedCandlesAtOrBefore(
+                candles = listOf(h1),
+                timeframe = Timeframe.H1,
+                decisionTimeSeconds = 4_600L
+            )
+        )
+    }
+
+    @Test
     fun assumesStopLossFirstWhenBothLevelsTouchInSameCandleForBuy() {
         val candle = candle(high = 102.0, low = 98.0, open = 100.0, close = 101.0)
         assertEquals(
@@ -164,11 +208,13 @@ class StrategyBacktesterTest {
         high: Double,
         low: Double,
         open: Double,
-        close: Double
+        close: Double,
+        timeframe: Timeframe = Timeframe.M5,
+        timestamp: Long = 1_800_000_000L
     ) = Candle(
         symbol = "XAUUSD",
-        timeframe = Timeframe.M5,
-        timestamp = 1_800_000_000L,
+        timeframe = timeframe,
+        timestamp = timestamp,
         open = open,
         high = high,
         low = low,
