@@ -331,7 +331,7 @@ class MainActivity : AppCompatActivity() {
         )
         if (evaluation.action.name == "NO_TRADE") {
             copyResultText.setTextColor(red)
-            copyResultText.text = "NO TRADE\n当前报价：\${fmt(currentPrice)}\nEntry 距离：\${fmt(evaluation.priceDistance)}\n原因：\${evaluation.reason}"
+            copyResultText.text = "NO TRADE\n当前报价：${fmt(currentPrice)}\nEntry 距离：${fmt(evaluation.priceDistance)}\n原因：${evaluation.reason}"
             return
         }
 
