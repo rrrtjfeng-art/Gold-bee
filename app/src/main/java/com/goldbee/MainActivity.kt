@@ -79,6 +79,13 @@ class MainActivity : AppCompatActivity() {
     @Volatile private var lastQuoteReceivedAt: Long = 0L
     @Volatile private var lastQuoteSourceTimestamp: Long? = null
     private var polling = false
+    private val observerRefreshRunnable = object : Runnable {
+        override fun run() {
+            if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+            refreshMt5Observation()
+            handler.postDelayed(this, OBSERVER_REFRESH_INTERVAL_MS)
+        }
+    }
     private var requestInProgress = false
     private val pollInterval = 10 * 60 * 1000L
 
@@ -120,7 +127,13 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (::mt5ObservationText.isInitialized) refreshMt5Observation()
+        handler.removeCallbacks(observerRefreshRunnable)
+        handler.post(observerRefreshRunnable)
+    }
+
+    override fun onPause() {
+        handler.removeCallbacks(observerRefreshRunnable)
+        super.onPause()
     }
 
     private fun refreshMt5Observation() {
@@ -149,7 +162,7 @@ class MainActivity : AppCompatActivity() {
             } else {
                 "状态：无障碍权限未开启。可启用无障碍文字读取，或单独使用下方的屏幕 OCR。"
             }
-            mt5ObservationText.text = if (ocrStatus.isBlank()) base else "$base\\n$ocrStatus"
+            mt5ObservationText.text = if (ocrStatus.isBlank()) base else "$base\n$ocrStatus"
             mt5ObservationText.setTextColor(gold)
             return
         }
@@ -179,6 +192,8 @@ class MainActivity : AppCompatActivity() {
             appendLine("Entry：${price(Mt5ScreenAccessibilityService.KEY_ENTRY)} · SL：${price(Mt5ScreenAccessibilityService.KEY_SL)} · TP：${price(Mt5ScreenAccessibilityService.KEY_TP)}")
             appendLine("Bid：${price(Mt5ScreenAccessibilityService.KEY_BID)} · Ask：${price(Mt5ScreenAccessibilityService.KEY_ASK)}")
             appendLine("读取时间：$time（$ageSeconds 秒前）")
+            append(if (ageSeconds <= 3L) "观察状态：刚刚更新；仍需核对识别内容。" else "观察状态：记录已过期，不能当作当前报价。")
+            appendLine()
             append("安全限制：屏幕识别结果不是经验证的实时行情，不会单独触发交易信号。")
         }
         mt5ObservationText.setTextColor(if (ageSeconds <= 10L) green else gold)
@@ -828,5 +843,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val SCREEN_CAPTURE_REQUEST_CODE = 7401
+        private const val OBSERVER_REFRESH_INTERVAL_MS = 1000L
     }
 }
