@@ -372,7 +372,17 @@ class MainActivity : AppCompatActivity() {
         }
 
     private fun setPaperCurrency(currency: String) {
-        paperAccountCurrency = if (currency == "USC") "USC" else "USD"
+        val nextCurrency = if (currency == "USC") "USC" else "USD"
+        val previousCurrency = paperAccountCurrency
+        if (nextCurrency != previousCurrency && ::paperBalanceInput.isInitialized) {
+            val currentBalance = paperBalanceInput.text.toString().trim().toDoubleOrNull()
+            if (currentBalance != null && currentBalance.isFinite() && currentBalance > 0.0) {
+                val converted = if (nextCurrency == "USC") currentBalance * 100.0 else currentBalance / 100.0
+                paperBalanceInput.setText(String.format(Locale.US, "%.2f", converted))
+                prefs.edit().putString("paper_start_balance", converted.toString()).apply()
+            }
+        }
+        paperAccountCurrency = nextCurrency
         prefs.edit().putString("paper_account_currency", paperAccountCurrency).apply()
         if (::paperTradeText.isInitialized) refreshPaperTradeStatus()
     }
@@ -1346,7 +1356,7 @@ class MainActivity : AppCompatActivity() {
         val losses = prefs.getInt("paper_money_losses", 0)
         val flats = prefs.getInt("paper_money_flats", 0)
         val totalUsd = prefs.getFloat("paper_total_pnl_usd", 0f).toDouble()
-        val startBalance = prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0
+        val startBalance = if (::paperBalanceInput.isInitialized) paperBalanceInput.text.toString().trim().toDoubleOrNull() ?: (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0) else (prefs.getString("paper_start_balance", "1000.00").orEmpty().toDoubleOrNull() ?: 1000.0)
         val realizedBalance = startBalance + totalUsd * accountScale()
         val stats = "模拟账户：初始 ${String.format(Locale.US, "%.2f", startBalance)} ${accountUnitLabel()} · 已实现净盈亏 ${fmtAccountMoney(totalUsd)} · 余额 ${String.format(Locale.US, "%.2f", realizedBalance)} ${accountUnitLabel()}\\n净盈利 $wins · 净亏损 $losses · 持平 $flats"
         val monitorStatus = prefs.getString("paper_monitor_status", "尚未开始自动检查").orEmpty()
