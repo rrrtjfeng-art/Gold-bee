@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.goldbee.analysis.MultiTimeframeAnalyzer
 import com.goldbee.analysis.SwingSupportResistanceAnalyzer
 import com.goldbee.analysis.StrategyBacktester
+import com.goldbee.analysis.TakeProfitPlanner
 import com.goldbee.analysis.MultiTimeframeAnalysis
 import com.goldbee.analysis.Trend
 import com.goldbee.decision.CopySignalEvaluator
@@ -886,19 +887,33 @@ class MainActivity : AppCompatActivity() {
         decisionReasonText.text = if (setup == null) {
             decision.reason
         } else {
+            val targetOptions = TakeProfitPlanner.targets(
+                direction = setup.direction,
+                entry = setup.entry,
+                stopLoss = setup.stopLoss
+            ).joinToString(separator = "\n") { target ->
+                String.format(
+                    Locale.US,
+                    "%s TP：%.3f · 距离 %.3f（约 %.0f pips）",
+                    target.style.label,
+                    target.price,
+                    target.distance,
+                    target.estimatedPips
+                )
+            }
             String.format(
                 Locale.US,
-                "%s\nEntry：%.3f\nSL：%.3f\nTP：%.3f\nR:R：1:%.1f\n模型评分置信度：%.0f%%\n原因：%s",
+                "%s\nEntry：%.3f\nSL：%.3f\n模型原始 TP：%.3f（R:R 1:%.1f）\n模型评分置信度：%.0f%%\n原因：%s\n\n备选 TP（按 SL 风险距离计算）：\n%s\nPips 暂按 1 pip = 0.01 美元价格变化估算；不同 MT5 经纪商的点值定义可能不同。备选目标仅供比较，尚未单独通过进场闸门。",
                 decision.reason,
                 setup.entry,
                 setup.stopLoss,
                 setup.takeProfit,
                 setup.riskReward,
                 decision.confidence * 100.0,
-                setup.reason
+                setup.reason,
+                targetOptions
             )
         }
-    }
 
     private fun refreshRiskStatus() {
         val state = RiskStateStore.get(this)
