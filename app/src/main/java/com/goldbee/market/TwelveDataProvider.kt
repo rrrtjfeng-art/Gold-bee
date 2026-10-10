@@ -92,23 +92,25 @@ class TwelveDataProvider(
             return false
         }
 
-        val timeframes =
-            listOf(
-                Timeframe.M5,
-                Timeframe.M15,
-                Timeframe.H1
-            )
+        // M5 is the backtest execution timeframe. Load enough history to
+        // cover the minimum seven-calendar-day sample window when the feed
+        // provides continuous weekday candles. Higher timeframes need fewer bars.
+        val historyRequests = listOf(
+            Timeframe.M5 to 2500,
+            Timeframe.M15 to 1000,
+            Timeframe.H1 to 500
+        )
 
         var allSuccessful =
             true
 
-        timeframes.forEach { timeframe ->
+        historyRequests.forEach { (timeframe, outputSize) ->
 
             val result =
                 historicalProvider
                     .getHistoricalCandles(
                         timeframe = timeframe,
-                        outputSize = 500
+                        outputSize = outputSize
                     )
 
             result
