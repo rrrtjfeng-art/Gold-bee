@@ -160,6 +160,7 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
             refreshMt5Observation()
+            refreshPaperTradeStatus()
             handler.postDelayed(this, OBSERVER_REFRESH_INTERVAL_MS)
         }
     }
@@ -1105,6 +1106,7 @@ class MainActivity : AppCompatActivity() {
             return
         }
         savePaperTrade(trade)
+        prefs.edit().putString("paper_monitor_status", "等待新的 MT5 报价，自动检查 SL/TP。").apply()
         pendingPaperSignal = null
         paperTradeText.text = "模拟单已开启：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n入场 Bid ${fmt(trade.entryBid)} / Ask ${fmt(trade.entryAsk)} · 点差 ${fmt(trade.entryAsk - trade.entryBid)}\n${attempt.reason}\n注意：这是本地模拟，不会发送真实订单。"
         paperTradeText.setTextColor(green)
@@ -1250,9 +1252,20 @@ class MainActivity : AppCompatActivity() {
         val flats = prefs.getInt("paper_flats", 0)
         val total = prefs.getFloat("paper_total_pnl_price", 0f).toDouble()
         val stats = "历史模拟结果：盈利 $wins · 亏损 $losses · 持平 $flats · 累计价格盈亏 ${fmt(total)}（非账户货币）"
+        val monitorStatus = prefs.getString("paper_monitor_status", "尚未开始自动检查").orEmpty()
+        val observedPrefs = getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+        val quoteAge = System.currentTimeMillis() - observedPrefs.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
+        val quoteSource = observedPrefs.getString(Mt5ScreenAccessibilityService.KEY_SOURCE, "").orEmpty()
+        val monitorFresh = quoteSource in setOf("ACCESSIBILITY", "SCREEN_OCR") &&
+            quoteAge in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
+        val monitorLine = if (monitorFresh) {
+            "自动 SL/TP 监控：报价更新正常。$monitorStatus"
+        } else {
+            "自动 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 并启用只读读取或屏幕 OCR。"
+        }
         if (trade?.status == PaperTradeStatus.OPEN) {
-            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n开仓点差：${fmt(trade.entryAsk - trade.entryBid)} · 来源：${trade.source}\n$stats\n切换到 MT5 确保报价更新，再回到此处点击检查 SL/TP。"
-            paperTradeText.setTextColor(gold)
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n开仓点差：${fmt(trade.entryAsk - trade.entryBid)} · 来源：${trade.source}\n$monitorLine\n$stats"
+            paperTradeText.setTextColor(if (monitorFresh) gold else red)
         } else if (trade?.status == PaperTradeStatus.CLOSED) {
             paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason} · 价格盈亏 ${fmt(trade.pnlPrice)}\n$stats"
             paperTradeText.setTextColor(if ((trade.pnlPrice ?: 0.0) >= 0.0) green else red)
