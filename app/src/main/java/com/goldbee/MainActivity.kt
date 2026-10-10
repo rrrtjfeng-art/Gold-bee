@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity() {
                 if (!::liveFeedQuoteText.isInitialized) return@post
                 liveFeedQuoteText.text = if (accepted) {
                     String.format(Locale.US, "XAUUSD Bid %.2f · Ask %.2f · Spread %.2f", tick.bid, tick.ask, tick.spread) +
-                        "\\n源时间：" + SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(tick.timestamp))
+                        "\n源时间：" + SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date(tick.timestamp))
                 } else {
                     "收到报价，但未通过行情新鲜度或品种检查；不可用于进场。"
                 }
