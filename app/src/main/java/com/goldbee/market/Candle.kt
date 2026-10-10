@@ -19,6 +19,14 @@ data class Candle(
             "Symbol cannot be empty"
         }
 
+        require(open.isFinite() && high.isFinite() && low.isFinite() && close.isFinite()) {
+            "OHLC prices must be finite"
+        }
+
+        require(volume.isFinite() && volume >= 0.0) {
+            "Volume must be finite and non-negative"
+        }
+
         require(open >= 0.0) {
             "Open price cannot be negative"
         }
