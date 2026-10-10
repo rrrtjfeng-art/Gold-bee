@@ -425,12 +425,12 @@ class MainActivity : AppCompatActivity() {
         val estimatedNet = estimatedGross - commissionForPosition
         paperParameterHelpText.text = String.format(
             Locale.US,
-            "参数说明与快速估算：\\n" +
-                "• 模拟余额：%.2f %s，只用于本机模拟，不连接 MT5 真实账户。\\n" +
-                "• 仓位：%.4f 手 × %.2f 盎司/手 = %.4f 盎司。\\n" +
-                "• 黄金每变动 $1，毛盈亏约 $%.2f USD；当前 TP 距离 $%.2f，预计毛盈亏约 $%.2f USD。\\n" +
-                "• 扣估算往返佣金 $%.2f USD 后，TP 净盈亏约 $%.2f USD。未包含滑点、隔夜费或点差扩大。\\n" +
-                "• 点差通过 BUY 用 Ask 进场 / Bid 出场、SELL 用 Bid 进场 / Ask 出场体现，不会重复扣一次。\\n" +
+            "参数说明与快速估算：\n" +
+                "• 模拟余额：%.2f %s，只用于本机模拟，不连接 MT5 真实账户。\n" +
+                "• 仓位：%.4f 手 × %.2f 盎司/手 = %.4f 盎司。\n" +
+                "• 黄金每变动 $1，毛盈亏约 $%.2f USD；当前 TP 距离 $%.2f，预计毛盈亏约 $%.2f USD。\n" +
+                "• 扣估算往返佣金 $%.2f USD 后，TP 净盈亏约 $%.2f USD。未包含滑点、隔夜费或点差扩大。\n" +
+                "• 点差通过 BUY 用 Ask 进场 / Bid 出场、SELL 用 Bid 进场 / Ask 出场体现，不会重复扣一次。\n" +
                 "• USC 是显示单位换算（100 USC = 1 USD），不是经纪商真实美分账户连接。",
             balance, accountUnitLabel(), lots, contract, exposureOunces,
             exposureOunces, selectedDistance, estimatedGross, commissionForPosition, estimatedNet
@@ -741,19 +741,19 @@ class MainActivity : AppCompatActivity() {
         addButton(decision, "用 MT5 当前报价分析 REAL 信号", true) { analyzeRealFromMt5Screen() }
         addLabel(decision, "REAL 止盈目标（XAUUSD 价格距离，不是保证收益）", 13f, white, true)
         val tpRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        paperTpSmallButton = addButton(tpRow, "小赚 +2.00", selectedPaperTpStyle == TakeProfitStyle.SMALL) {
+        paperTpSmallButton = addButton(tpRow, "短目标：金价 $2", selectedPaperTpStyle == TakeProfitStyle.SMALL) {
             selectPaperTpStyle(TakeProfitStyle.SMALL)
         }
-        paperTpMediumButton = addButton(tpRow, "中赚 +5.00", selectedPaperTpStyle == TakeProfitStyle.MEDIUM) {
+        paperTpMediumButton = addButton(tpRow, "中目标：金价 $5", selectedPaperTpStyle == TakeProfitStyle.MEDIUM) {
             selectPaperTpStyle(TakeProfitStyle.MEDIUM)
         }
-        paperTpLargeButton = addButton(tpRow, "大赚 +10.00", selectedPaperTpStyle == TakeProfitStyle.LARGE) {
+        paperTpLargeButton = addButton(tpRow, "长目标：金价 $10", selectedPaperTpStyle == TakeProfitStyle.LARGE) {
             selectPaperTpStyle(TakeProfitStyle.LARGE)
         }
         decision.addView(tpRow)
         paperTpStatusText = addLabel(
             decision,
-            "默认选择小赚 TP +2.00。只有按实际 MT5 Bid/Ask 进场价并计入往返佣金后净盈亏比达到 1.0，才允许确认模拟单。",
+            "这里的 $2 / $5 / $10 指黄金报价的价格移动距离，不是保证赚到的美元。实际盈亏由手数、合约规格、进出场报价和佣金决定；净盈亏比低于 1.0 会拒绝开模拟单。",
             11f,
             muted
         )
@@ -789,6 +789,7 @@ class MainActivity : AppCompatActivity() {
         paperParameterHelpText.setBackgroundColor(Color.rgb(25, 32, 44))
         listOf(paperBalanceInput, paperLotSizeInput, paperContractSizeInput, paperCommissionInput).forEach(::watchPaperParameter)
         paperAccountCurrency = prefs.getString("paper_account_currency", "USD").orEmpty().ifBlank { "USD" }
+        refreshPaperParameterHelp()
         val currencyRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         paperUsdCurrencyButton = addButton(currencyRow, "显示：USD 美元", paperAccountCurrency == "USD") { setPaperCurrency("USD") }
         paperUscCurrencyButton = addButton(currencyRow, "显示：USC 美分", paperAccountCurrency == "USC") { setPaperCurrency("USC") }
