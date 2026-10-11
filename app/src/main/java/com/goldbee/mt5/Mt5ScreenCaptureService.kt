@@ -189,8 +189,25 @@ class Mt5ScreenCaptureService : Service() {
                 val lines = visionText.textBlocks.flatMap { block ->
                     block.lines.map { line -> line.text }
                 }
-                val observation = Mt5ScreenObservationParser.parse(lines)
-                saveObservation(observation)
+                val combinedText = lines.joinToString(" ").lowercase()
+                val protectedScreenNotice =
+                    (combinedText.contains("为安全起见") && combinedText.contains("屏幕共享")) ||
+                    (combinedText.contains("screen sharing") && combinedText.contains("hidden")) ||
+                    (combinedText.contains("screen capture") && combinedText.contains("hidden"))
+                if (protectedScreenNotice) {
+                    // Do not parse the Android privacy placeholder as market data.
+                    // Gold Bee must not attempt to bypass Android's protected-screen policy.
+                    getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
+                        .edit()
+                        .putString(
+                            KEY_OCR_STATUS,
+                            "OCR 受限：Android/MT5 已隐藏受保护画面，当前捕获到的是系统安全提示，不是报价。Gold Bee 不会绕过屏幕保护。请停止 OCR，改用无障碍文字读取；若 MT5 不暴露报价文字，则需使用经纪商行情 API 或 MT5 官方支持的数据通道。"
+                        )
+                        .apply()
+                } else {
+                    val observation = Mt5ScreenObservationParser.parse(lines)
+                    saveObservation(observation)
+                }
             }
             .addOnFailureListener {
                 getSharedPreferences(Mt5ScreenAccessibilityService.PREFS_NAME, MODE_PRIVATE)
