@@ -794,10 +794,7 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
             } else {
-                ContextCompat.startForegroundService(
-                    this,
-                    android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java)
-                )
+                startService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java))
             }
         }
         addButton(mt5Row, "关闭悬浮窗") {
