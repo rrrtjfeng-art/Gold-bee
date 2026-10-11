@@ -1693,6 +1693,7 @@ class MainActivity : AppCompatActivity() {
             .putString("overlay_decision", decision.action.name)
             .putString("overlay_plan", overlayPlan)
             .putString("overlay_reason", decision.reason.take(300))
+            .putLong("overlay_decision_at", System.currentTimeMillis())
             .apply()
         if (decision.action == DecisionAction.BUY || decision.action == DecisionAction.SELL) {
             val setup = decision.setup
