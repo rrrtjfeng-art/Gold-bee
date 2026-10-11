@@ -332,14 +332,31 @@ class MainActivity : AppCompatActivity() {
             val eventCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_EVENT_COUNT, 0)
             val eventTextCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_TEXT_COUNT, 0)
             val eventPackage = observation.getString(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_PACKAGE, "").orEmpty()
+            val lastAnyEventAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_LAST_ANY_EVENT_AT, 0L)
+            val anyEventCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_ANY_EVENT_COUNT, 0)
+            val lastAnyPackage = observation.getString(Mt5ScreenAccessibilityService.KEY_LAST_ANY_EVENT_PACKAGE, "").orEmpty()
+            val lastAnyType = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_ANY_EVENT_TYPE, 0)
+            val connectedAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_SERVICE_CONNECTED_AT, 0L)
+            val connected = observation.getBoolean(Mt5ScreenAccessibilityService.KEY_SERVICE_CONNECTED, false)
             val diagnostic = when {
                 !serviceEnabled ->
-                    "状态：系统没有检测到 Gold Bee 无障碍服务已启用。请在无障碍服务列表中打开 Gold Bee。"
-                lastEventAt <= 0L ->
-                    "状态：无障碍开关看似已开启，但尚未收到 MT5 屏幕事件。请打开 MT5 主报价页或图表，再回到这里刷新。"
-                else -> {
+                    "状态：Android 当前没有报告 Gold Bee 无障碍服务已启用。请确认安装的是最新 APK，并在系统无障碍列表中开启 Gold Bee。" 
+                lastEventAt > 0L -> {
                     val seconds = ((System.currentTimeMillis() - lastEventAt).coerceAtLeast(0L)) / 1000L
-                    "状态：已收到 MT5/应用屏幕事件；事件次数 $eventCount，最近一次可访问文字数 $eventTextCount，来源包名 $eventPackage（\${seconds} 秒前）。\n目前未识别出有效 Bid/Ask；这属于报价解析问题，不等于权限没开。请点“开始屏幕 OCR”读取屏幕画面。"
+                    "状态：已收到 MT5 屏幕事件，但未识别出有效 Bid/Ask。MT5事件 $eventCount 次；文字节点 $eventTextCount；包名 $eventPackage；最近事件 ${seconds} 秒前。请检查报价页文字读取，或点「开始屏幕 OCR」。"
+                }
+                lastAnyEventAt > 0L -> {
+                    val seconds = ((System.currentTimeMillis() - lastAnyEventAt).coerceAtLeast(0L)) / 1000L
+                    "状态：无障碍服务有收到系统事件，但尚未识别到官方 MT5 事件。系统事件 $anyEventCount 次；最近来源包名：$lastAnyPackage；事件类型：$lastAnyType；${seconds} 秒前。请保持官方 MT5 在前台，再打开报价列表或切换页面。若包名持续不是 net.metaquotes.metatrader5，需检查应用识别规则。"
+                }
+                else -> {
+                    val connectedText = if (connected && connectedAt > 0L) {
+                        val seconds = ((System.currentTimeMillis() - connectedAt).coerceAtLeast(0L)) / 1000L
+                        "服务已连接 ${seconds} 秒，但 Android 尚未向 Gold Bee 发送任何已观察到的事件。"
+                    } else {
+                        "系统设置显示开关已开，但 Gold Bee 尚无服务连接回执或事件记录。"
+                    }
+                    "状态：$connectedText\n请从最近任务中彻底关闭 Gold Bee 后重新打开；再把官方 MT5 放到前台，切换「报价」与「图表」页面，然后返回此页。此状态不是市场休市判断。" 
                 }
             }
             mt5ObservationText.text = if (ocrStatus.isBlank()) diagnostic else "$diagnostic\n$ocrStatus"
