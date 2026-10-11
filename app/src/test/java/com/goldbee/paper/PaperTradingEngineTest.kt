@@ -131,4 +131,51 @@ class PaperTradingEngineTest {
         assertNull(result.trade)
     }
 
+
+    @Test
+    fun staleQuoteCannotUpdateOrCloseAnOpenTrade() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now)
+        val opened = PaperTradingEngine.open(signal, quote(4099.8, 4100.2), now, 1.0)
+        assertTrue(opened.accepted)
+
+        val stale = PaperTradingEngine.update(
+            opened.trade!!,
+            quote(4111.0, 4111.2, now - 3_001L),
+            now
+        )
+        assertFalse(stale.accepted)
+        assertNull(stale.trade)
+    }
+
+    @Test
+    fun sellStopLossClosesUsingAskSide() {
+        val signal = PaperSignal(TradeDirection.SELL, 4100.0, 4105.0, 4090.0, "TEST", now)
+        val opened = PaperTradingEngine.open(signal, quote(4099.8, 4100.2), now, 1.0)
+        assertTrue(opened.accepted)
+
+        val closed = PaperTradingEngine.update(
+            opened.trade!!,
+            quote(4105.1, 4105.4, now + 1_000L),
+            now + 1_000L
+        )
+        assertEquals(PaperTradeStatus.CLOSED, closed.trade!!.status)
+        assertEquals(PaperExitReason.STOP_LOSS, closed.trade.exitReason)
+        assertEquals(4105.4, closed.trade.exitPrice!!, 0.000001)
+    }
+
+    @Test
+    fun takeProfitExitIsCappedAtTargetEvenWhenQuoteGapsPastIt() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now)
+        val opened = PaperTradingEngine.open(signal, quote(4099.8, 4100.2), now, 1.0)
+        assertTrue(opened.accepted)
+
+        val closed = PaperTradingEngine.update(
+            opened.trade!!,
+            quote(4112.0, 4112.2, now + 1_000L),
+            now + 1_000L
+        )
+        assertEquals(PaperExitReason.TAKE_PROFIT, closed.trade!!.exitReason)
+        assertEquals(4110.0, closed.trade.exitPrice!!, 0.000001)
+    }
+
 }
