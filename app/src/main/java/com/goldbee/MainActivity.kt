@@ -2137,8 +2137,18 @@ class MainActivity : AppCompatActivity() {
                     trade.commissionPerLotRoundTurnUsd * trade.lotSize
             }
             val equity = if (floatingUsd == null) realizedBalance else realizedBalance + floatingUsd * accountScale()
-            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\n$monitorLine\n$stats"
-            paperTradeText.setTextColor(if (monitorFresh) gold else red)
+            val balanceUsd = startBalance / accountScale()
+            val plannedStopLossUsd =
+                (kotlin.math.abs(trade.entryPrice - trade.stopLoss) * trade.contractSizeOunces +
+                    trade.commissionPerLotRoundTurnUsd) * trade.lotSize
+            val stopRiskPercent = if (balanceUsd > 0.0) plannedStopLossUsd / balanceUsd * 100.0 else Double.NaN
+            val stopRiskLine = if (stopRiskPercent.isFinite()) {
+                "按当前手数估算的 SL 风险：${fmtAccountMoney(plannedStopLossUsd)}（余额 ${String.format(Locale.US, "%.2f", stopRiskPercent)}%）\n注意：不含滑点、跳空及执行偏差。"
+            } else {
+                "按当前手数估算的 SL 风险：无法计算，请检查模拟账户余额。"
+            }
+            paperTradeText.text = "模拟持仓：${trade.direction} · Entry ${fmt(trade.entryPrice)} · SL ${fmt(trade.stopLoss)} · TP ${fmt(trade.takeProfit)}\n手数 ${trade.lotSize} · 合约 ${trade.contractSizeOunces} 盎司/手 · 开仓点差 ${fmt(trade.entryAsk - trade.entryBid)}\n预估浮动净盈亏：${fmtAccountMoney(floatingUsd)} · 模拟净值：${String.format(Locale.US, "%.2f", equity)} ${accountUnitLabel()}\n$stopRiskLine\n$monitorLine\n$stats"
+            paperTradeText.setTextColor(if (!monitorFresh || stopRiskPercent > 2.0) red else if (stopRiskPercent > 0.5) gold else green)
         } else if (trade?.status == PaperTradeStatus.CLOSED) {
             paperTradeText.text = "最近模拟单：${trade.direction} · 出场 ${fmt(trade.exitPrice)} · ${trade.exitReason}\n价格变动：${fmt(trade.pnlPrice)} · 扣估算往返佣金后净盈亏：${fmtAccountMoney(trade.pnlUsd)}\n$stats"
             paperTradeText.setTextColor(if ((trade.pnlUsd ?: 0.0) >= 0.0) green else red)
