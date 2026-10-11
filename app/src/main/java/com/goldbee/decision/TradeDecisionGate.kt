@@ -30,10 +30,32 @@ object TradeDecisionGate {
         riskState: RiskState = RiskState()
     ): TradeDecisionGateResult {
         if (!snapshot.isPriceValid()) return blocked("当前买卖报价无效，禁止交易。")
+        val normalizedSymbol = snapshot.symbol.uppercase().replace("/", "").replace(".", "").replace("_", "")
+        if (!normalizedSymbol.contains("XAUUSD") && normalizedSymbol != "GOLD") {
+            return blocked("当前品种不是已识别的 XAUUSD / GOLD，禁止套用黄金交易规则。")
+        }
+        if (snapshot.ask <= snapshot.bid) {
+            return blocked("Bid/Ask 没有正点差，可能是模拟值或报价不完整；无法验证真实交易成本。")
+        }
         if (snapshot.source.contains("Twelve Data", ignoreCase = true)) {
             return blocked("当前行情源只提供参考价，没有真实 bid/ask 点差；无法可靠评估净盈亏比，禁止生成可执行交易建议。请使用具备真实买卖报价的行情源。")
         }
         if (!freshnessGuard.isFresh(snapshot)) return blocked("行情已经过期，禁止交易。")
+
+        val requiredTimeframes = listOf(Timeframe.M5, Timeframe.M15, Timeframe.H1)
+        for (timeframe in requiredTimeframes) {
+            val bars = candles[timeframe].orEmpty()
+            if (bars.size < 50) {
+                return blocked("$timeframe 历史 K 线只有 ${bars.size} 根，至少需要 50 根；禁止生成可执行信号。")
+            }
+            if (bars.any { it.timeframe != timeframe || !it.open.isFinite() || !it.high.isFinite() ||
+                    !it.low.isFinite() || !it.close.isFinite() || it.close <= 0.0 }) {
+                return blocked("$timeframe 历史 K 线包含无效或周期不匹配的数据，禁止交易。")
+            }
+            if (bars.zipWithNext().any { (previous, next) -> next.timestamp <= previous.timestamp }) {
+                return blocked("$timeframe 历史 K 线时间戳未严格递增，可能存在重复或乱序数据；禁止交易。")
+            }
+        }
 
         val atr = analysis.m15.indicators.atr14
             ?: return blocked("M15 ATR 不可用，无法评估点差和风险。")
