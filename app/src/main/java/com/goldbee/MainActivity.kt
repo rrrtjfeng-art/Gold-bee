@@ -862,10 +862,10 @@ class MainActivity : AppCompatActivity() {
         settingsPage.addView(liveFeedCard)
 
         val mt5BridgeCard = makeCard()
-        addLabel(mt5BridgeCard, "MT5 桌面行情桥（优先真实账户同源报价）", 17f, white, true)
+        addLabel(mt5BridgeCard, "MT5 桌面行情桥（可选；没有电脑请跳过）", 17f, white, true)
         addLabel(
             mt5BridgeCard,
-            "桌面 MT5/VPS 的 GoldBeeBridge EA 读取该终端的真实 Bid/Ask，经 HTTPS 私有中继传到手机。手机 MT5 不能运行 EA。此通道只读，不下单；需要先部署仓库内的 Cloudflare Worker 与 KV。",
+            "这条路线必须有桌面 MT5 或 VPS；只有手机就不要配置这里，也不需要为了 Gold Bee 买电脑。手机方案在「行情/MT5」页的「MT5 屏幕观察（只读）」卡片：先开启无障碍读取，再打开 MT5；若文字读取不到，再由你主动授权屏幕 OCR。Android/MT5 隐藏受保护画面时，应用不会绕过保护。桌面桥只读，不下单。 ",
             11f,
             muted
         )
@@ -964,7 +964,7 @@ class MainActivity : AppCompatActivity() {
         marketPage.addView(quote)
 
         val mt5Card = makeCard()
-        addLabel(mt5Card, "MT5 屏幕观察（只读）", 17f, white, true)
+        addLabel(mt5Card, "MT5 手机只读读取（无电脑方案）", 17f, white, true)
         addLabel(
             mt5Card,
             "只在官方 MT5 处于前台时读取系统可访问的文字，提取品种、周期、方向及明确标注的 Entry/SL/TP。不会点击或下单；图表上的线条、蜡烛图和非文本标签可能无法读取。",
