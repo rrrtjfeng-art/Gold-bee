@@ -50,6 +50,7 @@ import com.goldbee.mt5.Mt5ScreenAccessibilityService
 import com.goldbee.settings.ApiKeyStore
 import com.goldbee.settings.EncryptedApiKeyStore
 import com.goldbee.risk.RiskStateStore
+import com.goldbee.risk.RiskBasedLotCalculator
 import com.goldbee.decision.TradeDirection
 import com.goldbee.paper.PaperExitReason
 import com.goldbee.paper.PaperQuote
@@ -1324,6 +1325,7 @@ class MainActivity : AppCompatActivity() {
             evaluation.reason
         )
         copyResultText.text = copyResultText.text.toString() +
+            "\n" + riskLotSummary(planEntry, stopLoss) +
             "\n报价来源：MT5 屏幕读取（${ageMillis} ms）。历史 K 线来自 Twelve Data。" +
             "\n此结果只用于人工复核，不会自动下单，也不保证盈利。"
         pendingPaperSignal = PaperSignal(
@@ -1642,15 +1644,15 @@ class MainActivity : AppCompatActivity() {
             )
             val homeSetup = decision.setup
             homePlanText.text = if (homeSetup == null) {
-                "进场价 Entry：—\\n止损价 SL：—\\n止盈价 TP：—\\n潜在盈亏比：当前没有可确认的交易计划"
+                "进场价 Entry：—\n止损价 SL：—\n止盈价 TP：—\n潜在盈亏比：当前没有可确认的交易计划"
             } else {
                 String.format(
                     Locale.US,
-                    "进场价 Entry：%.3f\\n止损价 SL：%.3f\\n止盈价 TP：%.3f\\n潜在盈亏比：1:%.2f",
+                    "进场价 Entry：%.3f\n止损价 SL：%.3f\n止盈价 TP：%.3f\n潜在盈亏比：1:%.2f",
                     homeSetup.entry, homeSetup.stopLoss, homeSetup.takeProfit,
                     kotlin.math.abs(homeSetup.takeProfit - homeSetup.entry) /
                         kotlin.math.max(kotlin.math.abs(homeSetup.entry - homeSetup.stopLoss), 0.000001)
-                )
+                ) + "\n" + riskLotSummary(homeSetup.entry, homeSetup.stopLoss)
             }
             homeHintText.text = when (decision.action) {
                 DecisionAction.BUY -> "偏向买入，但不代表一定会上涨。检查当前 MT5 报价、点差、止损和盈亏比；只有你确认后才记录模拟单。"
@@ -1989,6 +1991,44 @@ class MainActivity : AppCompatActivity() {
             )
         } catch (_: Exception) {
             null
+        }
+    }
+
+    private fun riskLotSummary(entry: Double, stopLoss: Double): String {
+        if (!::paperBalanceInput.isInitialized || !::paperContractSizeInput.isInitialized ||
+            !::paperCommissionInput.isInitialized
+        ) return "仓位估算：模拟账户参数尚未初始化。"
+
+        val balanceInput = paperBalanceInput.text.toString().trim().toDoubleOrNull()
+        val contract = paperContractSizeInput.text.toString().trim().toDoubleOrNull()
+        val commission = paperCommissionInput.text.toString().trim().toDoubleOrNull() ?: 0.0
+        if (balanceInput == null || !balanceInput.isFinite() || balanceInput <= 0.0 ||
+            contract == null || !contract.isFinite() || contract <= 0.0 ||
+            !commission.isFinite() || commission < 0.0
+        ) return "仓位估算：请检查模拟余额、合约大小和每手往返佣金。"
+
+        val balanceUsd = if (paperAccountCurrency == "USC") balanceInput / 100.0 else balanceInput
+        val estimate = RiskBasedLotCalculator.calculate(
+            balanceUsd = balanceUsd,
+            riskPercent = 0.5,
+            entry = entry,
+            stopLoss = stopLoss,
+            contractSizeOuncesPerLot = contract,
+            roundTurnCommissionPerLotUsd = commission,
+            minimumLot = 0.01,
+            lotStep = 0.01
+        ) ?: return "仓位估算：参数无效，暂不提供手数参考。"
+
+        val budget = String.format(Locale.US, "$%.2f", estimate.riskBudgetUsd)
+        val minimumLoss = String.format(Locale.US, "$%.2f", estimate.minimumLotLossUsd)
+        return if (estimate.isTradable) {
+            String.format(
+                Locale.US,
+                "仓位参考（模拟设置，风险预算 0.5%%）：%.2f 手 · 预算 %s · 预计止损亏损 $%.2f。假设合约 %.2f 盎司/手、佣金 $%.2f/手；最小手数/步进按 0.01/0.01 假设。",
+                estimate.lots, budget, estimate.estimatedLossUsd, contract, commission
+            )
+        } else {
+            "风险拦截：预算 $budget，但假设最小 0.01 手的止损亏损约 $minimumLoss；按当前模拟参数应放弃这笔交易，而不是加大手数。请核对经纪商合约大小、最小手数和步进。"
         }
     }
 
