@@ -2,24 +2,45 @@ package com.goldbee.mt5
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import com.goldbee.paper.PaperTradeMonitor
 
 /**
- * Read-only observer for the official MT5 Android package.
+ * Read-only observer for MT5 Android.
  *
- * Diagnostics are recorded before package filtering so a package-name mismatch
- * cannot make a running service look completely inactive. Only metadata is saved;
- * raw screen text is never persisted.
+ * Some chart UIs update prices without reliably emitting content-change events.
+ * In addition to events, periodically inspect the active accessibility tree while
+ * MT5 is the foreground window. Only parsed fields and diagnostic metadata are saved.
  */
 class Mt5ScreenAccessibilityService : AccessibilityService() {
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var lastProcessedAt = 0L
+
+    private val activeWindowPoll = object : Runnable {
+        override fun run() {
+            val root = runCatching { rootInActiveWindow }.getOrNull()
+            val activePackage = root?.packageName?.toString().orEmpty()
+            val now = System.currentTimeMillis()
+            val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+            prefs.edit()
+                .putLong(KEY_LAST_POLL_AT, now)
+                .putString(KEY_LAST_POLL_PACKAGE, activePackage)
+                .putBoolean(KEY_LAST_POLL_ROOT_NULL, root == null)
+                .apply()
+
+            if (root != null && isSupportedMt5Package(activePackage)) {
+                scanAndStore(activePackage, root, emptyList(), 0)
+            }
+            mainHandler.postDelayed(this, ACTIVE_WINDOW_POLL_INTERVAL_MS)
+        }
+    }
 
     override fun onServiceConnected() {
         serviceInfo = serviceInfo.apply {
-            // Listen broadly enough to diagnose whether Android is delivering events.
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
                 AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
@@ -35,59 +56,62 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             .putLong(KEY_SERVICE_CONNECTED_AT, System.currentTimeMillis())
             .apply()
         super.onServiceConnected()
+        mainHandler.removeCallbacks(activeWindowPoll)
+        mainHandler.post(activeWindowPoll)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-
         val eventPackage = event.packageName?.toString().orEmpty()
         val nowWall = System.currentTimeMillis()
-        val diagnosticPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        // Record every delivered event before filtering. This reveals whether the
-        // service is alive but MT5's actual package name differs from expectations.
-        diagnosticPrefs.edit()
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        prefs.edit()
             .putLong(KEY_LAST_ANY_EVENT_AT, nowWall)
             .putString(KEY_LAST_ANY_EVENT_PACKAGE, eventPackage)
             .putInt(KEY_LAST_ANY_EVENT_TYPE, event.eventType)
-            .putInt(KEY_ANY_EVENT_COUNT, diagnosticPrefs.getInt(KEY_ANY_EVENT_COUNT, 0) + 1)
+            .putInt(KEY_ANY_EVENT_COUNT, prefs.getInt(KEY_ANY_EVENT_COUNT, 0) + 1)
             .apply()
 
         if (!isSupportedMt5Package(eventPackage)) return
+        val eventTexts = event.text.mapNotNull { it?.toString()?.takeIf(String::isNotBlank) }
+        scanAndStore(eventPackage, runCatching { rootInActiveWindow }.getOrNull(), eventTexts, eventTexts.size)
+    }
 
-        val now = SystemClock.elapsedRealtime()
-        if (now - lastProcessedAt < MIN_PROCESS_INTERVAL_MS) return
-        lastProcessedAt = now
+    private fun scanAndStore(
+        packageName: String,
+        root: AccessibilityNodeInfo?,
+        eventTexts: List<String>,
+        eventTextCount: Int
+    ) {
+        val elapsed = SystemClock.elapsedRealtime()
+        if (elapsed - lastProcessedAt < MIN_PROCESS_INTERVAL_MS) return
+        lastProcessedAt = elapsed
 
         val texts = mutableListOf<String>()
-        val root = rootInActiveWindow
-        val scanStats = NodeScanStats(rootWasNull = root == null)
-        collectNodeText(root, texts, scanStats, MAX_NODES)
-        var eventTextCount = 0
-        event.text.forEach { item ->
-            if (item != null && item.toString().isNotBlank()) {
-                texts += item.toString()
-                eventTextCount++
-            }
-        }
+        val stats = NodeScanStats(rootWasNull = root == null)
+        collectNodeText(root, texts, stats, MAX_NODES)
+        texts.addAll(eventTexts)
         val observation = Mt5ScreenObservationParser.parse(texts)
-        val observedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        observedPrefs.edit()
+        val prefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        val nowWall = System.currentTimeMillis()
+
+        prefs.edit()
             .putLong(KEY_LAST_EVENT_AT, nowWall)
-            .putString(KEY_LAST_EVENT_PACKAGE, eventPackage)
+            .putString(KEY_LAST_EVENT_PACKAGE, packageName)
             .putInt(KEY_LAST_EVENT_TEXT_COUNT, texts.size)
-            .putInt(KEY_LAST_EVENT_NODE_COUNT, scanStats.nodesVisited)
-            .putInt(KEY_LAST_EVENT_NODE_TEXT_COUNT, scanStats.textNodeCount)
-            .putInt(KEY_LAST_EVENT_DESCRIPTION_COUNT, scanStats.descriptionCount)
+            .putInt(KEY_LAST_EVENT_NODE_COUNT, stats.nodesVisited)
+            .putInt(KEY_LAST_EVENT_NODE_TEXT_COUNT, stats.textNodeCount)
+            .putInt(KEY_LAST_EVENT_DESCRIPTION_COUNT, stats.descriptionCount)
             .putInt(KEY_LAST_EVENT_EVENT_TEXT_COUNT, eventTextCount)
-            .putBoolean(KEY_LAST_EVENT_ROOT_NULL, scanStats.rootWasNull)
+            .putBoolean(KEY_LAST_EVENT_ROOT_NULL, stats.rootWasNull)
             .putBoolean(KEY_LAST_PARSE_HAS_SYMBOL, observation.symbol != null)
             .putBoolean(KEY_LAST_PARSE_HAS_BID, observation.bid != null)
             .putBoolean(KEY_LAST_PARSE_HAS_ASK, observation.ask != null)
-            .putInt(KEY_EVENT_COUNT, observedPrefs.getInt(KEY_EVENT_COUNT, 0) + 1)
+            .putInt(KEY_EVENT_COUNT, prefs.getInt(KEY_EVENT_COUNT, 0) + 1)
             .apply()
 
-        val previousBid = observedPrefs.getString(KEY_BID, "").orEmpty().toDoubleOrNull()
-        val previousAsk = observedPrefs.getString(KEY_ASK, "").orEmpty().toDoubleOrNull()
+        val previousBid = prefs.getString(KEY_BID, "").orEmpty().toDoubleOrNull()
+        val previousAsk = prefs.getString(KEY_ASK, "").orEmpty().toDoubleOrNull()
         val hasNewQuote = Mt5QuoteFreshness.isNewExecutableQuote(
             symbol = observation.symbol,
             bid = observation.bid,
@@ -95,7 +119,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             previousBid = previousBid,
             previousAsk = previousAsk
         )
-        val editor = observedPrefs.edit()
+        val editor = prefs.edit()
             .putString(KEY_SOURCE, "ACCESSIBILITY")
             .putString(KEY_SYMBOL, observation.symbol.orEmpty())
             .putString(KEY_TIMEFRAME, observation.timeframe.orEmpty())
@@ -117,6 +141,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
 
     private fun isSupportedMt5Package(packageName: String): Boolean {
         if (packageName == MT5_PACKAGE || packageName == "net.metaquotes.metatrader5ce") return true
+        if (packageName.isBlank()) return false
         val appLabel = runCatching {
             val appInfo = packageManager.getApplicationInfo(packageName, 0)
             packageManager.getApplicationLabel(appInfo).toString()
@@ -159,6 +184,7 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
+        mainHandler.removeCallbacks(activeWindowPoll)
         getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
             .putBoolean(KEY_SERVICE_CONNECTED, false)
             .apply()
@@ -199,7 +225,11 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         const val KEY_LAST_ANY_EVENT_PACKAGE = "last_any_accessibility_event_package"
         const val KEY_LAST_ANY_EVENT_TYPE = "last_any_accessibility_event_type"
         const val KEY_ANY_EVENT_COUNT = "any_accessibility_event_count"
+        const val KEY_LAST_POLL_AT = "last_active_window_poll_at"
+        const val KEY_LAST_POLL_PACKAGE = "last_active_window_poll_package"
+        const val KEY_LAST_POLL_ROOT_NULL = "last_active_window_poll_root_null"
         private const val MIN_PROCESS_INTERVAL_MS = 300L
+        private const val ACTIVE_WINDOW_POLL_INTERVAL_MS = 700L
         private const val MAX_NODES = 350
     }
 }
