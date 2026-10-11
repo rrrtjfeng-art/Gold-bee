@@ -1722,11 +1722,11 @@ class MainActivity : AppCompatActivity() {
                     }.joinToString("\n") { order ->
                         String.format(
                             Locale.US,
-                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\n取消边界 %.3f",
+                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\n取消边界 %.3f\n%s\n经纪商最小挂单距离尚未核验；下单前必须在 MT5 检查。",
                             order.type.label, order.entry, order.stopLoss,
                             order.takeProfit1, order.riskReward1,
                             order.takeProfit2, order.riskReward2,
-                            order.cancelIfPriceBeyond
+                            order.cancelIfPriceBeyond, order.rationale
                         )
                     }.ifBlank { "当前结构空间不足以生成合格条件单；不要强行挂单。" }
                 }
