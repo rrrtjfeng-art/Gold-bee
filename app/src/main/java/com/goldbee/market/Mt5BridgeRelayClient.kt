@@ -48,12 +48,18 @@ object Mt5BridgeRelayClient {
             }
             val json = JSONObject(body)
             if (!json.optBoolean("ok", false)) throw IllegalStateException("行情桥未返回有效报价。")
+            val brokerSymbol = json.optString("symbol", "").trim()
+            val isGold = Regex("(?i)^(XAUUSD(?:[._-]?[A-Z0-9]{1,8})?|XAU/USD(?:[._-]?[A-Z0-9]{1,8})?|GOLD(?:[._-]?[A-Z0-9]{1,8})?)$")
+                .matches(brokerSymbol)
+            if (!isGold) throw IllegalStateException("MT5 桥接品种不是可识别的黄金品种：$brokerSymbol")
             val tick = MarketTick(
-                symbol = json.optString("symbol", "").trim(),
+                // Normalize broker suffixes for Gold Bee's XAUUSD feed controller.
+                // The EA/relay still retains the exact broker symbol in its payload.
+                symbol = "XAUUSD",
                 bid = json.optDouble("bid", Double.NaN),
                 ask = json.optDouble("ask", Double.NaN),
                 timestamp = json.optLong("timestamp_ms", 0L),
-                source = "MT5_BRIDGE"
+                source = "MT5_BRIDGE:$brokerSymbol"
             )
             if (!tick.isValid()) throw IllegalStateException("行情桥报价字段无效。")
             if (!tick.isFresh(maxAgeMillis = 10000L)) {
