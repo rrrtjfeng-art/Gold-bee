@@ -44,6 +44,14 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         }
         val observation = Mt5ScreenObservationParser.parse(texts)
         val observedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        // Keep service-health diagnostics separate from valid-quote freshness.
+        // A missing Bid/Ask must not make a working accessibility service look inactive.
+        observedPrefs.edit()
+            .putLong(KEY_LAST_EVENT_AT, System.currentTimeMillis())
+            .putString(KEY_LAST_EVENT_PACKAGE, eventPackage)
+            .putInt(KEY_LAST_EVENT_TEXT_COUNT, texts.size)
+            .putInt(KEY_EVENT_COUNT, observedPrefs.getInt(KEY_EVENT_COUNT, 0) + 1)
+            .apply()
         val previousBid = observedPrefs.getString(KEY_BID, "").orEmpty().toDoubleOrNull()
         val previousAsk = observedPrefs.getString(KEY_ASK, "").orEmpty().toDoubleOrNull()
         val hasNewQuote = Mt5QuoteFreshness.isNewExecutableQuote(
@@ -118,6 +126,10 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         const val KEY_ASK = "ask"
         const val KEY_TEXT_COUNT = "text_count"
         const val KEY_SOURCE = "observation_source"
+        const val KEY_LAST_EVENT_AT = "last_accessibility_event_at"
+        const val KEY_LAST_EVENT_PACKAGE = "last_accessibility_event_package"
+        const val KEY_LAST_EVENT_TEXT_COUNT = "last_accessibility_event_text_count"
+        const val KEY_EVENT_COUNT = "accessibility_event_count"
         private const val MIN_PROCESS_INTERVAL_MS = 700L
         private const val MAX_NODES = 250
     }
