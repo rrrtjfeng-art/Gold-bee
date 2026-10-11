@@ -2171,7 +2171,9 @@ class MainActivity : AppCompatActivity() {
             }.getOrDefault("")
             val packageName = resolve.activityInfo.packageName
             packageName in candidates ||
-                label.contains("MetaTrader 5", ignoreCase = true) ||
+                packageName.contains("metatrader", ignoreCase = true) ||
+                packageName.contains("metaquotes", ignoreCase = true) ||
+                label.contains("MetaTrader", ignoreCase = true) ||
                 label.equals("MT5", ignoreCase = true)
         }?.let { resolve ->
             packageManager.getLaunchIntentForPackage(resolve.activityInfo.packageName)
