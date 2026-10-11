@@ -57,6 +57,25 @@ class PaperTradingEngineTest {
     }
 
     @Test
+    fun staleSignalCannotOpenTradeEvenWithFreshQuote() {
+        val signal = PaperSignal(
+            TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST",
+            now - PaperTradingEngine.MAX_SIGNAL_AGE_MILLIS - 1L
+        )
+        val result = PaperTradingEngine.open(signal, quote(4099.8, 4100.2), now, 1.0)
+        assertFalse(result.accepted)
+        assertNull(result.trade)
+    }
+
+    @Test
+    fun futureDatedSignalCannotOpenTrade() {
+        val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now + 1L)
+        val result = PaperTradingEngine.open(signal, quote(4099.8, 4100.2), now, 1.0)
+        assertFalse(result.accepted)
+        assertNull(result.trade)
+    }
+
+    @Test
     fun movedPriceCannotBeChased() {
         val signal = PaperSignal(TradeDirection.BUY, 4100.0, 4095.0, 4110.0, "TEST", now)
         val result = PaperTradingEngine.open(signal, quote(4102.0, 4102.2), now, 1.0)
