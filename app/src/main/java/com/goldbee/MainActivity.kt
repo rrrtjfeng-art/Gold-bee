@@ -785,7 +785,10 @@ class MainActivity : AppCompatActivity() {
             startActivity(android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         addButton(mt5Row, "刷新读取结果") { refreshMt5Observation() }
-        addButton(mt5Row, "开启悬浮窗（覆盖 MT5）", true) {
+        mt5Card.addView(mt5Row)
+
+        val overlayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(overlayRow, "开启悬浮窗（覆盖 MT5）", true) {
             if (!Settings.canDrawOverlays(this)) {
                 startActivity(
                     android.content.Intent(
@@ -794,14 +797,18 @@ class MainActivity : AppCompatActivity() {
                     )
                 )
             } else {
-                startService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java))
+                runCatching {
+                    startService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java))
+                }.onFailure {
+                    mt5ObservationText.text = "悬浮窗启动失败：请检查“显示在其他应用上层”权限，然后重试。"
+                }
             }
         }
-        addButton(mt5Row, "关闭悬浮窗") {
+        addButton(overlayRow, "关闭悬浮窗") {
             stopService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java)
                 .setAction(com.goldbee.mt5.GoldBeeOverlayService.ACTION_STOP))
         }
-        mt5Card.addView(mt5Row)
+        mt5Card.addView(overlayRow)
         addLabel(
             mt5Card,
             "悬浮窗可拖动、收起，显示最新只读报价和最近一次分析。首次使用需允许“显示在其他应用上层”；打开后切到 MT5。悬浮窗不保证后台报价更新，也不会替你下单。",
