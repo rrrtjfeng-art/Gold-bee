@@ -1759,6 +1759,10 @@ class MainActivity : AppCompatActivity() {
                 pendingAlternatives
             )
         }
+        if (setup != null) {
+            decisionReasonText.text = decisionReasonText.text.toString() +
+                "\n\n" + riskLotSummary(setup.entry, setup.stopLoss)
+        }
     }
 
 
