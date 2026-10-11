@@ -328,12 +328,21 @@ class MainActivity : AppCompatActivity() {
             ""
         ).orEmpty()
         if (observedAt <= 0L) {
-            val base = if (serviceEnabled) {
-                "状态：无障碍权限已开启；切换到官方 MT5 并停留几秒，再返回 Gold Bee。"
-            } else {
-                "状态：无障碍权限未开启。可启用无障碍文字读取，或单独使用下方的屏幕 OCR。"
+            val lastEventAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_AT, 0L)
+            val eventCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_EVENT_COUNT, 0)
+            val eventTextCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_TEXT_COUNT, 0)
+            val eventPackage = observation.getString(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_PACKAGE, "").orEmpty()
+            val diagnostic = when {
+                !serviceEnabled ->
+                    "状态：系统没有检测到 Gold Bee 无障碍服务已启用。请在无障碍服务列表中打开 Gold Bee。"
+                lastEventAt <= 0L ->
+                    "状态：无障碍开关看似已开启，但尚未收到 MT5 屏幕事件。请打开 MT5 主报价页或图表，再回到这里刷新。"
+                else -> {
+                    val seconds = ((System.currentTimeMillis() - lastEventAt).coerceAtLeast(0L)) / 1000L
+                    "状态：已收到 MT5/应用屏幕事件；事件次数 $eventCount，最近一次可访问文字数 $eventTextCount，来源包名 $eventPackage（\${seconds} 秒前）。\n目前未识别出有效 Bid/Ask；这属于报价解析问题，不等于权限没开。请点“开始屏幕 OCR”读取屏幕画面。"
+                }
             }
-            mt5ObservationText.text = if (ocrStatus.isBlank()) base else "$base\n$ocrStatus"
+            mt5ObservationText.text = if (ocrStatus.isBlank()) diagnostic else "$diagnostic\n$ocrStatus"
             mt5ObservationText.setTextColor(gold)
             return
         }
