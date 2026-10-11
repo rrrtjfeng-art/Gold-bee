@@ -165,6 +165,7 @@ class MainActivity : AppCompatActivity() {
     private var selectedChartTimeframe: Timeframe = Timeframe.M5
     private val terminalNavButtons = linkedMapOf<String, Button>()
     private lateinit var paperTradeText: TextView
+    private lateinit var realOrderTicketText: TextView
     private lateinit var paperTradeHistoryText: TextView
     private lateinit var paperTpStatusText: TextView
     private lateinit var paperTpSmallButton: Button
@@ -993,6 +994,29 @@ class MainActivity : AppCompatActivity() {
         tradePage.addView(decision)
         refreshPaperTradeStatus()
 
+        val realOrderCard = makeCard().apply {
+            setBackgroundColor(Color.rgb(25, 34, 43))
+        }
+        addLabel(realOrderCard, "实盘辅助 · MT5 手动提交", 18f, gold, true)
+        addLabel(
+            realOrderCard,
+            "这里把当前有效的 REAL/COPY 计划整理成可复制的订单票据，并可打开 MT5。Gold-bee 目前没有连接经纪商下单接口；按钮不会自动下单。请在 MT5 里重新核对品种、手数、保证金、点差和 SL/TP，再由你自己提交。",
+            12f,
+            white
+        )
+        realOrderTicketText = addLabel(
+            realOrderCard,
+            "尚无可用订单票据。先在上方分析 REAL 信号，或在 COPY 审核通过后生成。",
+            12f,
+            muted
+        )
+        val realOrderActions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(realOrderActions, "生成/复制订单票据", true) { prepareRealOrderTicket(copyToClipboard = true) }
+        addButton(realOrderActions, "打开 MT5") { openMt5ForManualOrder() }
+        realOrderCard.addView(realOrderActions, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6) })
+        addButton(realOrderCard, "只刷新票据（不复制）") { prepareRealOrderTicket(copyToClipboard = false) }
+        tradePage.addView(realOrderCard, 0)
+
         val riskCard = makeCard()
         addLabel(riskCard, "风险记录 · 手动登记真实交易结果", 17f, white, true)
         addLabel(
@@ -1791,6 +1815,106 @@ class MainActivity : AppCompatActivity() {
             ask = observation.getString(Mt5ScreenAccessibilityService.KEY_ASK, "").orEmpty().toDoubleOrNull() ?: Double.NaN,
             timestampMillis = observation.getLong(Mt5ScreenAccessibilityService.KEY_OBSERVED_AT, 0L)
         )
+    }
+
+    /**
+     * Builds a human-readable ticket from the latest approved signal.
+     * This is deliberately a manual MT5 hand-off, not broker execution.
+     */
+    private fun prepareRealOrderTicket(copyToClipboard: Boolean) {
+        if (!::realOrderTicketText.isInitialized) return
+        val now = System.currentTimeMillis()
+        val signal = pendingPaperSignal
+        if (signal == null) {
+            realOrderTicketText.text = "暂不可生成：没有有效 BUY/SELL 计划。先分析 REAL 或审核 COPY 信号。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        if (now - signal.createdAtMillis !in 0L..120_000L) {
+            realOrderTicketText.text = "拒绝生成：信号超过 2 分钟。请刷新行情并重新分析/审核，不能拿旧票据追价。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        val quote = readFreshPaperQuote()
+        if (quote == null || now - quote.timestampMillis !in 0L..2_000L ||
+            !quote.bid.isFinite() || !quote.ask.isFinite() ||
+            quote.bid <= 0.0 || quote.ask <= quote.bid
+        ) {
+            realOrderTicketText.text = "拒绝生成：MT5 Bid/Ask 无效或超过 2 秒。切回 MT5 等报价更新后重试。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        if (quote.symbol.uppercase().replace("/", "") !in setOf("XAUUSD", "GOLD")) {
+            realOrderTicketText.text = "拒绝生成：屏幕品种不是已确认的 XAUUSD/GOLD。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        val entry = signal.plannedEntry
+        val sl = signal.stopLoss
+        val tp = signal.takeProfit
+        val isBuy = signal.direction == TradeDirection.BUY
+        val levelsValid = entry.isFinite() && sl.isFinite() && tp.isFinite() &&
+            entry > 0.0 && sl > 0.0 && tp > 0.0 &&
+            if (isBuy) sl < entry && tp > entry else sl > entry && tp < entry
+        if (!levelsValid) {
+            realOrderTicketText.text = "拒绝生成：Entry、SL、TP 无效或与方向不匹配。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        val invalidated = if (isBuy) {
+            quote.bid <= sl || quote.ask >= tp
+        } else {
+            quote.ask >= sl || quote.bid <= tp
+        }
+        if (invalidated) {
+            realOrderTicketText.text = "拒绝生成：当前价格已触及/越过该计划的 SL 或 TP 边界，原计划视为失效。请重新分析。"
+            realOrderTicketText.setTextColor(red)
+            return
+        }
+        val orderType = when {
+            isBuy && entry < quote.ask -> "BUY LIMIT（买入限价）"
+            isBuy && entry > quote.ask -> "BUY STOP（买入止损挂单）"
+            !isBuy && entry > quote.bid -> "SELL LIMIT（卖出限价）"
+            !isBuy && entry < quote.bid -> "SELL STOP（卖出止损挂单）"
+            isBuy -> "BUY（市价方向；请在 MT5 核对）"
+            else -> "SELL（市价方向；请在 MT5 核对）"
+        }
+        val sourceLabel = if (signal.source.equals("COPY", ignoreCase = true)) "COPY 复核" else "REAL 分析"
+        val ticket = buildString {
+            appendLine("GOLD-BEE 实盘手动订单票据")
+            appendLine("来源：$sourceLabel")
+            appendLine("品种：XAUUSD（请核对经纪商后缀）")
+            appendLine("方向/类型：$orderType")
+            appendLine("Entry：${fmt(entry)}")
+            appendLine("SL：${fmt(sl)}")
+            appendLine("TP：${fmt(tp)}")
+            appendLine("当前 Bid/Ask：${fmt(quote.bid)} / ${fmt(quote.ask)}")
+            appendLine("点差：${fmt(quote.ask - quote.bid)}")
+            appendLine("手数：必须按真实账户净值、合约规格及止损金额自行计算；不要照抄模拟手数。")
+            append("提交前：在 MT5 核对报价、挂单类型、最小距离、保证金、风险和交易时段。")
+        }
+        realOrderTicketText.text = ticket
+        realOrderTicketText.setTextColor(green)
+        if (copyToClipboard) {
+            val clipboard = getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager
+            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Gold-bee MT5 order ticket", ticket))
+            android.widget.Toast.makeText(this, "订单票据已复制；尚未下单。请到 MT5 核对并手动提交。", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openMt5ForManualOrder() {
+        val intent = packageManager.getLaunchIntentForPackage("net.metaquotes.metatrader5")
+        if (intent == null) {
+            android.widget.Toast.makeText(
+                this,
+                "未找到官方 MT5 应用。请先安装/打开 MT5；Gold-bee 不会替你提交订单。",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+            return
+        }
+        runCatching { startActivity(intent) }.onFailure {
+            android.widget.Toast.makeText(this, "无法打开 MT5：请手动切换到 MT5。", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun confirmPaperTrade() {
