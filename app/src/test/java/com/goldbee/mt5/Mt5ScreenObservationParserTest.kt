@@ -24,6 +24,16 @@ class Mt5ScreenObservationParserTest {
     }
 
     @Test
+    fun recognizesBrokerGoldSymbolSuffixes() {
+        val result = Mt5ScreenObservationParser.parse(
+            listOf("XAUUSDm", "M5", "Bid: 4318.2", "Ask: 4318.5")
+        )
+        assertEquals("XAUUSDM", result.symbol)
+        assertEquals(4318.2, result.bid!!, 0.0001)
+        assertEquals(4318.5, result.ask!!, 0.0001)
+    }
+
+    @Test
     fun doesNotInventMissingEntryOrStopLoss() {
         val result = Mt5ScreenObservationParser.parse(listOf("GOLD", "BUY", "TP: 4400"))
         assertEquals("GOLD", result.symbol)
