@@ -10,29 +10,50 @@ import com.goldbee.paper.PaperTradeMonitor
 /**
  * Read-only observer for the official MT5 Android package.
  *
- * This service does not take screenshots, perform gestures, tap controls, or place orders.
- * It stores parsed market fields only; raw visible text is not persisted.
+ * Diagnostics are recorded before package filtering so a package-name mismatch
+ * cannot make a running service look completely inactive. Only metadata is saved;
+ * raw screen text is never persisted.
  */
 class Mt5ScreenAccessibilityService : AccessibilityService() {
     private var lastProcessedAt = 0L
 
     override fun onServiceConnected() {
         serviceInfo = serviceInfo.apply {
+            // Listen broadly enough to diagnose whether Android is delivering events.
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                 AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED or
-                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED
+                AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED or
+                AccessibilityEvent.TYPE_VIEW_SCROLLED or
+                AccessibilityEvent.TYPE_VIEW_FOCUSED
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
-            notificationTimeout = 500
+            notificationTimeout = 300
             packageNames = null
         }
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putBoolean(KEY_SERVICE_CONNECTED, true)
+            .putLong(KEY_SERVICE_CONNECTED_AT, System.currentTimeMillis())
+            .apply()
         super.onServiceConnected()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
+
         val eventPackage = event.packageName?.toString().orEmpty()
+        val nowWall = System.currentTimeMillis()
+        val diagnosticPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+        // Record every delivered event before filtering. This reveals whether the
+        // service is alive but MT5's actual package name differs from expectations.
+        diagnosticPrefs.edit()
+            .putLong(KEY_LAST_ANY_EVENT_AT, nowWall)
+            .putString(KEY_LAST_ANY_EVENT_PACKAGE, eventPackage)
+            .putInt(KEY_LAST_ANY_EVENT_TYPE, event.eventType)
+            .putInt(KEY_ANY_EVENT_COUNT, diagnosticPrefs.getInt(KEY_ANY_EVENT_COUNT, 0) + 1)
+            .apply()
+
         if (!isSupportedMt5Package(eventPackage)) return
+
         val now = SystemClock.elapsedRealtime()
         if (now - lastProcessedAt < MIN_PROCESS_INTERVAL_MS) return
         lastProcessedAt = now
@@ -44,14 +65,13 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         }
         val observation = Mt5ScreenObservationParser.parse(texts)
         val observedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
-        // Keep service-health diagnostics separate from valid-quote freshness.
-        // A missing Bid/Ask must not make a working accessibility service look inactive.
         observedPrefs.edit()
-            .putLong(KEY_LAST_EVENT_AT, System.currentTimeMillis())
+            .putLong(KEY_LAST_EVENT_AT, nowWall)
             .putString(KEY_LAST_EVENT_PACKAGE, eventPackage)
             .putInt(KEY_LAST_EVENT_TEXT_COUNT, texts.size)
             .putInt(KEY_EVENT_COUNT, observedPrefs.getInt(KEY_EVENT_COUNT, 0) + 1)
             .apply()
+
         val previousBid = observedPrefs.getString(KEY_BID, "").orEmpty().toDoubleOrNull()
         val previousAsk = observedPrefs.getString(KEY_ASK, "").orEmpty().toDoubleOrNull()
         val hasNewQuote = Mt5QuoteFreshness.isNewExecutableQuote(
@@ -73,9 +93,8 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             .putString(KEY_ASK, observation.ask?.toString().orEmpty())
             .putInt(KEY_TEXT_COUNT, observation.visibleTextCount)
         if (hasNewQuote) {
-            editor.putLong(KEY_OBSERVED_AT, System.currentTimeMillis())
+            editor.putLong(KEY_OBSERVED_AT, nowWall)
         } else if (previousBid == null || previousAsk == null) {
-            // No previously valid quote exists: keep the timestamp invalid until a valid quote arrives.
             editor.putLong(KEY_OBSERVED_AT, 0L)
         }
         editor.apply()
@@ -110,6 +129,13 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         }
     }
 
+    override fun onUnbind(intent: android.content.Intent?): Boolean {
+        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+            .putBoolean(KEY_SERVICE_CONNECTED, false)
+            .apply()
+        return super.onUnbind(intent)
+    }
+
     override fun onInterrupt() = Unit
 
     companion object {
@@ -130,7 +156,13 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         const val KEY_LAST_EVENT_PACKAGE = "last_accessibility_event_package"
         const val KEY_LAST_EVENT_TEXT_COUNT = "last_accessibility_event_text_count"
         const val KEY_EVENT_COUNT = "accessibility_event_count"
-        private const val MIN_PROCESS_INTERVAL_MS = 700L
-        private const val MAX_NODES = 250
+        const val KEY_SERVICE_CONNECTED = "accessibility_service_connected"
+        const val KEY_SERVICE_CONNECTED_AT = "accessibility_service_connected_at"
+        const val KEY_LAST_ANY_EVENT_AT = "last_any_accessibility_event_at"
+        const val KEY_LAST_ANY_EVENT_PACKAGE = "last_any_accessibility_event_package"
+        const val KEY_LAST_ANY_EVENT_TYPE = "last_any_accessibility_event_type"
+        const val KEY_ANY_EVENT_COUNT = "any_accessibility_event_count"
+        private const val MIN_PROCESS_INTERVAL_MS = 300L
+        private const val MAX_NODES = 350
     }
 }
