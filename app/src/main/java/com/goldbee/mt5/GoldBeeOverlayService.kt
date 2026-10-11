@@ -58,6 +58,7 @@ class GoldBeeOverlayService : Service() {
         return START_STICKY
     }
 
+    @Suppress("DEPRECATION")
     private fun createPanel() {
         val density = resources.displayMetrics.density
         fun dp(value: Int) = (value * density + 0.5f).toInt()
@@ -158,7 +159,7 @@ class GoldBeeOverlayService : Service() {
                 MotionEvent.ACTION_MOVE -> {
                     params.x = startX + event.rawX.toInt() - downX
                     params.y = startY + event.rawY.toInt() - downY
-                    runCatching { windowManager?.updateViewLayout(root, params) }
+                    runCatching { root?.let { windowManager?.updateViewLayout(it, params) } }
                     true
                 }
                 else -> false
