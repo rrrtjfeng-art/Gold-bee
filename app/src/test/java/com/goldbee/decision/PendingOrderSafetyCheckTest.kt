@@ -55,6 +55,25 @@ class PendingOrderSafetyCheckTest {
     }
 
     @Test
+    fun rejectsSetupAfterPriceCrossesItsInvalidationBoundary() {
+        val result = PendingOrderSafetyCheck.evaluate(
+            plan = buyLimit(), bid = 4101.0, ask = 4101.2,
+            atrM5 = 4.0, quoteAgeMillis = 500L
+        )
+        assertFalse(result.allowed)
+        assertTrue(result.reason.contains("失效边界"))
+    }
+
+    @Test
+    fun acceptsSetupWhilePriceRemainsBeforeInvalidationBoundary() {
+        val result = PendingOrderSafetyCheck.evaluate(
+            plan = buyLimit(), bid = 4100.0, ask = 4100.2,
+            atrM5 = 4.0, quoteAgeMillis = 500L
+        )
+        assertTrue(result.allowed)
+    }
+
+    @Test
     fun rejectsEntryInsideBrokerMinimumDistance() {
         val result = PendingOrderSafetyCheck.evaluate(
             plan = buyLimit(), bid = 4100.0, ask = 4100.2,
