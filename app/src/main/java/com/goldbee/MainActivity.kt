@@ -33,6 +33,7 @@ import com.goldbee.decision.DecisionAction
 import com.goldbee.decision.DecisionResult
 import com.goldbee.decision.TradeDecisionGate
 import com.goldbee.decision.PendingOrderPlanner
+import com.goldbee.decision.PendingOrderSafetyCheck
 import com.goldbee.market.Candle
 import com.goldbee.market.HistoricalCandleProvider
 import com.goldbee.market.GoldPriceDevWebSocketClient
@@ -1723,7 +1724,7 @@ class MainActivity : AppCompatActivity() {
                         recentM5.minOfOrNull { it.low }
                     }
                     listOf(false, true).mapNotNull { breakout ->
-                        PendingOrderPlanner.plan(
+                        val candidate = PendingOrderPlanner.plan(
                             direction = setup.direction,
                             currentPrice = executablePrice,
                             atrM5 = atrM5,
@@ -1732,7 +1733,18 @@ class MainActivity : AppCompatActivity() {
                             preferBreakout = breakout,
                             ema20Price = latestAnalysis?.m5?.indicators?.ema20,
                             breakoutLevel = breakoutLevel
+                        ) ?: return@mapNotNull null
+                        val safety = PendingOrderSafetyCheck.evaluate(
+                            plan = candidate,
+                            bid = mt5Quote.bid,
+                            ask = mt5Quote.ask,
+                            atrM5 = atrM5,
+                            quoteAgeMillis = quoteAge,
+                            // Broker stop/freeze levels are not reliably exposed by screen OCR.
+                            // Keep zero here and visibly require manual MT5 verification below.
+                            brokerMinimumDistance = 0.0
                         )
+                        candidate.takeIf { safety.allowed }
                     }.joinToString("\n") { order ->
                         String.format(
                             Locale.US,
