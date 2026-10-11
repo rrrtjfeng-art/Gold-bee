@@ -256,7 +256,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val mt5BridgePollRunnable = object : Runnable {
+    private val mt5BridgePollRunnable: Runnable = object : Runnable {
         override fun run() {
             if (!mt5BridgePolling ||
                 !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
