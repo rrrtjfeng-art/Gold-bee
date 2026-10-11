@@ -59,8 +59,9 @@ object PaperTradeMonitor {
 
         if (updated.status == PaperTradeStatus.CLOSED) {
             saveTrade(settings, updated)
-            PaperTradeHistoryStore.append(context, updated)
-            recordClosure(settings, updated)
+            if (PaperTradeHistoryStore.append(context, updated)) {
+                recordClosure(settings, updated)
+            }
             setStatus(
                 settings,
                 "模拟单已自动平仓：${updated.exitReason} · 出场 ${updated.exitPrice} · 净盈亏 ${updated.pnlUsd} USD（价格变动 ${updated.pnlPrice}）。仅为模拟，不是账户货币金额。"
