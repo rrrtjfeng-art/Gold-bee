@@ -568,7 +568,7 @@ class MainActivity : AppCompatActivity() {
             button.minHeight = dp(46)
             terminalNavButtons[id] = button
         }
-        navItem("market", "行情")
+        navItem("market", "行情/MT5")
         navItem("trade", "模拟交易")
         navItem("history", "回测")
         navItem("settings", "设置")
@@ -1197,8 +1197,8 @@ class MainActivity : AppCompatActivity() {
         tradePage.addView(copyCard, 0)
 
         addLabel(settingsPage, "安全提示：API Key 使用 Android Keystore 加密后保存在本机。不要把密钥提交到 GitHub。", 10f, muted)
-        // Open directly into COPY review to reduce taps for the user's main workflow.
-        showTerminalPage("trade")
+        // Open on the market page so MT5 read status is visible immediately during troubleshooting.
+        showTerminalPage("market")
     }
 
     private fun showTerminalPage(page: String) {
