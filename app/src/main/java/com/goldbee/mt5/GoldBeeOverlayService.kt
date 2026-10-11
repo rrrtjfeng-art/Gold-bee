@@ -183,9 +183,24 @@ class GoldBeeOverlayService : Service() {
             bid != null && ask != null && bid.isFinite() && ask.isFinite() &&
             bid > 0.0 && ask > bid && age in 0L..3_000L
 
-        val decision = settings.getString("overlay_decision", "尚未分析").orEmpty()
-        val plan = settings.getString("overlay_plan", "Entry —  |  SL —  |  TP —").orEmpty()
-        val reason = settings.getString("overlay_reason", "打开 Gold-bee 执行分析。").orEmpty()
+        val decisionAt = settings.getLong("overlay_decision_at", 0L)
+        val decisionAge = if (decisionAt > 0L) System.currentTimeMillis() - decisionAt else Long.MAX_VALUE
+        val decisionFresh = decisionAge in 0L..120_000L
+        val decision = if (decisionFresh) {
+            settings.getString("overlay_decision", "尚未分析").orEmpty()
+        } else {
+            "分析已过期，请重新分析"
+        }
+        val plan = if (decisionFresh) {
+            settings.getString("overlay_plan", "Entry —  |  SL —  |  TP —").orEmpty()
+        } else {
+            "Entry —  |  SL —  |  TP —（旧计划已隐藏）"
+        }
+        val reason = if (decisionFresh) {
+            settings.getString("overlay_reason", "打开 Gold-bee 执行分析。").orEmpty()
+        } else {
+            "旧信号不用于进场。请在 Gold-bee 重新读取 MT5 报价并分析。"
+        }
         val monitor = settings.getString("paper_monitor_status", "尚无模拟持仓监控状态。").orEmpty()
         text.text = if (compact) {
             if (quoteValid) "XAUUSD  ${fmt(bid!!)} / ${fmt(ask!!)} · ${age}ms" else "XAUUSD · 报价等待/过期"
@@ -193,7 +208,7 @@ class GoldBeeOverlayService : Service() {
             buildString {
                 appendLine(if (quoteValid) "XAUUSD  ${fmt(bid!!)} / ${fmt(ask!!)}" else "MT5 报价：等待 / 过期 / 品种未确认")
                 appendLine(if (quoteValid) "点差：${fmt(ask!! - bid!!)} · ${age} ms" else "切回 MT5 并确认只读读取/OCR仍在运行")
-                appendLine("决策：${decision}")
+                appendLine("决策：${decision}" + if (decisionFresh) "（${decisionAge / 1_000}s）" else "")
                 appendLine(plan)
                 appendLine("理由：${reason.take(120)}")
                 append("模拟监控：${monitor.take(100)}")
