@@ -785,7 +785,32 @@ class MainActivity : AppCompatActivity() {
             startActivity(android.content.Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         }
         addButton(mt5Row, "刷新读取结果") { refreshMt5Observation() }
+        addButton(mt5Row, "开启悬浮窗（覆盖 MT5）", true) {
+            if (!Settings.canDrawOverlays(this)) {
+                startActivity(
+                    android.content.Intent(
+                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                        android.net.Uri.parse("package:$packageName")
+                    )
+                )
+            } else {
+                ContextCompat.startForegroundService(
+                    this,
+                    android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java)
+                )
+            }
+        }
+        addButton(mt5Row, "关闭悬浮窗") {
+            stopService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java)
+                .setAction(com.goldbee.mt5.GoldBeeOverlayService.ACTION_STOP))
+        }
         mt5Card.addView(mt5Row)
+        addLabel(
+            mt5Card,
+            "悬浮窗可拖动、收起，显示最新只读报价和最近一次分析。首次使用需允许“显示在其他应用上层”；打开后切到 MT5。悬浮窗不保证后台报价更新，也不会替你下单。",
+            10f,
+            muted
+        )
         val mt5QuoteRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(mt5QuoteRow, "确认 MT5 报价并分析", true) { evaluateMt5ObservedQuote() }
         mt5Card.addView(mt5QuoteRow)
@@ -1639,6 +1664,21 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showDecision(decision: DecisionResult) {
+        val overlaySetup = decision.setup
+        val overlayPlan = if (overlaySetup == null) {
+            "Entry —  |  SL —  |  TP —"
+        } else {
+            String.format(
+                Locale.US,
+                "Entry %.2f  |  SL %.2f  |  TP %.2f",
+                overlaySetup.entry, overlaySetup.stopLoss, overlaySetup.takeProfit
+            )
+        }
+        prefs.edit()
+            .putString("overlay_decision", decision.action.name)
+            .putString("overlay_plan", overlayPlan)
+            .putString("overlay_reason", decision.reason.take(300))
+            .apply()
         if (decision.action == DecisionAction.BUY || decision.action == DecisionAction.SELL) {
             val setup = decision.setup
             pendingRealSignalBase = if (setup == null) null else PaperSignal(
