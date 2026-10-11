@@ -97,8 +97,8 @@ object TradeDecisionGate {
             preflightPassed = true,
             reason = buildString {
                 append("决策：${decision.action.name} 候选通过当前行情、进场结构和风险预检查。")
-                append("\\n下一步：核对 Entry / SL / TP 与手数后，由用户在官方 MT5 中自行确认。Gold-bee 不会自动提交真实订单。")
-                append("\\n执行前重新检查：报价是否仍在 3 秒有效期内、价格是否已偏离 Entry、点差是否扩大、信号是否已触及 SL/TP。任一条件变化，先重新分析，不追价。")
+                append("\n下一步：核对 Entry / SL / TP 与手数后，由用户在官方 MT5 中自行确认。Gold-bee 不会自动提交真实订单。")
+                append("\n执行前重新检查：报价是否仍在 3 秒有效期内、价格是否已偏离 Entry、点差是否扩大、信号是否已触及 SL/TP。任一条件变化，先重新分析，不追价。")
             }
         )
     }
