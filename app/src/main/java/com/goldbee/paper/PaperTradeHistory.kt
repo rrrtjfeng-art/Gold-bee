@@ -116,16 +116,24 @@ object PaperTradeHistoryStore {
         return decode(raw)
     }
 
-    fun append(context: Context, trade: PaperTrade) {
-        val record = PaperTradeHistoryRecord.fromTrade(trade) ?: return
-        synchronized(lock) {
+    /**
+     * Returns true only when this close is newly recorded. Multiple observers can
+     * see the same SL/TP quote, so callers must update aggregate stats only once.
+     */
+    fun append(context: Context, trade: PaperTrade): Boolean {
+        val record = PaperTradeHistoryRecord.fromTrade(trade) ?: return false
+        return synchronized(lock) {
             val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             val current = decode(prefs.getString(HISTORY_KEY, null).orEmpty())
-            if (current.any { it.id == record.id }) return
-            val updated = (current + record)
-                .sortedBy { it.exitTimestampMillis }
-                .takeLast(MAX_RECORDS)
-            prefs.edit().putString(HISTORY_KEY, encode(updated)).apply()
+            if (current.any { it.id == record.id }) {
+                false
+            } else {
+                val updated = (current + record)
+                    .sortedBy { it.exitTimestampMillis }
+                    .takeLast(MAX_RECORDS)
+                prefs.edit().putString(HISTORY_KEY, encode(updated)).apply()
+                true
+            }
         }
     }
 
