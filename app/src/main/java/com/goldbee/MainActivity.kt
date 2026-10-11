@@ -279,6 +279,16 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (Settings.canDrawOverlays(this) && prefs.getBoolean("overlay_start_after_permission", false)) {
+            prefs.edit().putBoolean("overlay_start_after_permission", false).apply()
+            runCatching {
+                startService(android.content.Intent(this, com.goldbee.mt5.GoldBeeOverlayService::class.java))
+            }.onFailure {
+                if (::mt5ObservationText.isInitialized) {
+                    mt5ObservationText.text = "悬浮窗启动失败。请在系统设置中允许显示在其他应用上层，再重试。"
+                }
+            }
+        }
         handler.removeCallbacks(observerRefreshRunnable)
         handler.post(observerRefreshRunnable)
         handler.removeCallbacks(liveFeedHealthRunnable)
@@ -790,6 +800,7 @@ class MainActivity : AppCompatActivity() {
         val overlayRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addButton(overlayRow, "开启悬浮窗（覆盖 MT5）", true) {
             if (!Settings.canDrawOverlays(this)) {
+                prefs.edit().putBoolean("overlay_start_after_permission", true).apply()
                 startActivity(
                     android.content.Intent(
                         Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
