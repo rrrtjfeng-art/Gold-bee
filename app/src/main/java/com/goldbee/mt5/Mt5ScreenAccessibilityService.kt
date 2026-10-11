@@ -59,9 +59,15 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         lastProcessedAt = now
 
         val texts = mutableListOf<String>()
-        collectNodeText(rootInActiveWindow, texts, MAX_NODES)
+        val root = rootInActiveWindow
+        val scanStats = NodeScanStats(rootWasNull = root == null)
+        collectNodeText(root, texts, scanStats, MAX_NODES)
+        var eventTextCount = 0
         event.text.forEach { item ->
-            if (item != null) texts += item.toString()
+            if (item != null && item.toString().isNotBlank()) {
+                texts += item.toString()
+                eventTextCount++
+            }
         }
         val observation = Mt5ScreenObservationParser.parse(texts)
         val observedPrefs = getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
@@ -69,6 +75,14 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             .putLong(KEY_LAST_EVENT_AT, nowWall)
             .putString(KEY_LAST_EVENT_PACKAGE, eventPackage)
             .putInt(KEY_LAST_EVENT_TEXT_COUNT, texts.size)
+            .putInt(KEY_LAST_EVENT_NODE_COUNT, scanStats.nodesVisited)
+            .putInt(KEY_LAST_EVENT_NODE_TEXT_COUNT, scanStats.textNodeCount)
+            .putInt(KEY_LAST_EVENT_DESCRIPTION_COUNT, scanStats.descriptionCount)
+            .putInt(KEY_LAST_EVENT_EVENT_TEXT_COUNT, eventTextCount)
+            .putBoolean(KEY_LAST_EVENT_ROOT_NULL, scanStats.rootWasNull)
+            .putBoolean(KEY_LAST_PARSE_HAS_SYMBOL, observation.symbol != null)
+            .putBoolean(KEY_LAST_PARSE_HAS_BID, observation.bid != null)
+            .putBoolean(KEY_LAST_PARSE_HAS_ASK, observation.ask != null)
             .putInt(KEY_EVENT_COUNT, observedPrefs.getInt(KEY_EVENT_COUNT, 0) + 1)
             .apply()
 
@@ -113,19 +127,34 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             packageName.contains("metaquotes", ignoreCase = true)
     }
 
+    private data class NodeScanStats(
+        val rootWasNull: Boolean,
+        var nodesVisited: Int = 0,
+        var textNodeCount: Int = 0,
+        var descriptionCount: Int = 0
+    )
+
     private fun collectNodeText(
         node: AccessibilityNodeInfo?,
         output: MutableList<String>,
-        remaining: Int
+        stats: NodeScanStats,
+        maximumNodes: Int
     ) {
-        if (node == null || output.size >= remaining) return
+        if (node == null || stats.nodesVisited >= maximumNodes) return
+        stats.nodesVisited++
         val text = node.text?.toString()?.trim().orEmpty()
         val description = node.contentDescription?.toString()?.trim().orEmpty()
-        if (text.isNotBlank()) output += text
-        if (description.isNotBlank()) output += description
+        if (text.isNotBlank()) {
+            output += text
+            stats.textNodeCount++
+        }
+        if (description.isNotBlank()) {
+            output += description
+            stats.descriptionCount++
+        }
         for (i in 0 until node.childCount) {
-            if (output.size >= remaining) break
-            collectNodeText(node.getChild(i), output, remaining)
+            if (stats.nodesVisited >= maximumNodes) break
+            collectNodeText(node.getChild(i), output, stats, maximumNodes)
         }
     }
 
@@ -155,6 +184,14 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         const val KEY_LAST_EVENT_AT = "last_accessibility_event_at"
         const val KEY_LAST_EVENT_PACKAGE = "last_accessibility_event_package"
         const val KEY_LAST_EVENT_TEXT_COUNT = "last_accessibility_event_text_count"
+        const val KEY_LAST_EVENT_NODE_COUNT = "last_accessibility_event_node_count"
+        const val KEY_LAST_EVENT_NODE_TEXT_COUNT = "last_accessibility_event_node_text_count"
+        const val KEY_LAST_EVENT_DESCRIPTION_COUNT = "last_accessibility_event_description_count"
+        const val KEY_LAST_EVENT_EVENT_TEXT_COUNT = "last_accessibility_event_event_text_count"
+        const val KEY_LAST_EVENT_ROOT_NULL = "last_accessibility_event_root_null"
+        const val KEY_LAST_PARSE_HAS_SYMBOL = "last_parse_has_symbol"
+        const val KEY_LAST_PARSE_HAS_BID = "last_parse_has_bid"
+        const val KEY_LAST_PARSE_HAS_ASK = "last_parse_has_ask"
         const val KEY_EVENT_COUNT = "accessibility_event_count"
         const val KEY_SERVICE_CONNECTED = "accessibility_service_connected"
         const val KEY_SERVICE_CONNECTED_AT = "accessibility_service_connected_at"
