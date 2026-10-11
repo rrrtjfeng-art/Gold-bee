@@ -41,6 +41,7 @@ import com.goldbee.market.GoldPriceDevWebSocketClient
 import com.goldbee.market.MarketFeedController
 import com.goldbee.market.MarketTick
 import com.goldbee.market.MarketTickListener
+import com.goldbee.market.Mt5BridgeRelayClient
 import com.goldbee.market.MarketSnapshot
 import com.goldbee.market.RealMarketPrice
 import com.goldbee.market.RealMarketRestClient
@@ -144,6 +145,12 @@ class MainActivity : AppCompatActivity() {
         }
     }
     private lateinit var twelveDataKeyInput: EditText
+    private lateinit var mt5BridgeUrlInput: EditText
+    private lateinit var mt5BridgeReadTokenInput: EditText
+    private lateinit var mt5BridgeStatusText: TextView
+    @Volatile private var mt5BridgePolling = false
+    @Volatile private var mt5BridgeRequestInFlight = false
+    @Volatile private var lastMt5BridgeTimestamp = 0L
     private lateinit var statusText: TextView
     private lateinit var priceText: TextView
     private lateinit var bidAskText: TextView
@@ -249,6 +256,68 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val mt5BridgePollRunnable = object : Runnable {
+        override fun run() {
+            if (!mt5BridgePolling ||
+                !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
+            if (mt5BridgeRequestInFlight) {
+                handler.postDelayed(this, 500L)
+                return
+            }
+            val baseUrl = prefs.getString("mt5_bridge_url", "").orEmpty().trim()
+            val readToken = EncryptedApiKeyStore.get(this@MainActivity, "mt5_bridge_read_token")
+            if (baseUrl.isBlank() || readToken.isBlank()) {
+                if (::mt5BridgeStatusText.isInitialized) {
+                    mt5BridgeStatusText.text = "状态：请先保存 HTTPS Worker 地址与只读令牌。"
+                    mt5BridgeStatusText.setTextColor(red)
+                }
+                mt5BridgePolling = false
+                return
+            }
+            mt5BridgeRequestInFlight = true
+            ioExecutor.execute {
+                try {
+                    val tick = Mt5BridgeRelayClient.fetchLatest(baseUrl, readToken)
+                    handler.post {
+                        mt5BridgeRequestInFlight = false
+                        if (tick.timestamp > lastMt5BridgeTimestamp) {
+                            lastMt5BridgeTimestamp = tick.timestamp
+                            liveFeedListener.onTick(tick)
+                            if (::mt5BridgeStatusText.isInitialized) {
+                                val time = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault())
+                                    .format(Date(tick.timestamp))
+                                mt5BridgeStatusText.text =
+                                    "已收到 MT5 新 Tick · ${tick.symbol} · 源时间 $time · Bid/Ask 已验证 · 只读"
+                                mt5BridgeStatusText.setTextColor(green)
+                            }
+                        } else if (::mt5BridgeStatusText.isInitialized) {
+                            val age = ((System.currentTimeMillis() - tick.timestamp).coerceAtLeast(0L)) / 1000L
+                            mt5BridgeStatusText.text = "桥接可访问，但没有更新的 Tick；最新报价年龄 $age 秒。"
+                            mt5BridgeStatusText.setTextColor(if (age <= 3L) gold else red)
+                        }
+                        if (mt5BridgePolling &&
+                            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            handler.postDelayed(mt5BridgePollRunnable, 1000L)
+                        }
+                    }
+                } catch (error: Exception) {
+                    handler.post {
+                        mt5BridgeRequestInFlight = false
+                        if (::mt5BridgeStatusText.isInitialized) {
+                            mt5BridgeStatusText.text = "MT5 桥接：${error.message ?: "连接失败"}"
+                            mt5BridgeStatusText.setTextColor(gold)
+                        }
+                        if (mt5BridgePolling &&
+                            lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) {
+                            handler.postDelayed(mt5BridgePollRunnable, 2000L)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.statusBarColor = bg
@@ -293,11 +362,16 @@ class MainActivity : AppCompatActivity() {
         handler.post(observerRefreshRunnable)
         handler.removeCallbacks(liveFeedHealthRunnable)
         handler.post(liveFeedHealthRunnable)
+        if (mt5BridgePolling) {
+            handler.removeCallbacks(mt5BridgePollRunnable)
+            handler.post(mt5BridgePollRunnable)
+        }
     }
 
     override fun onPause() {
         handler.removeCallbacks(observerRefreshRunnable)
         handler.removeCallbacks(liveFeedHealthRunnable)
+        handler.removeCallbacks(mt5BridgePollRunnable)
         super.onPause()
     }
 
@@ -786,6 +860,76 @@ class MainActivity : AppCompatActivity() {
         }
         liveFeedCard.addView(liveFeedButtons)
         settingsPage.addView(liveFeedCard)
+
+        val mt5BridgeCard = makeCard()
+        addLabel(mt5BridgeCard, "MT5 桌面行情桥（优先真实账户同源报价）", 17f, white, true)
+        addLabel(
+            mt5BridgeCard,
+            "桌面 MT5/VPS 的 GoldBeeBridge EA 读取该终端的真实 Bid/Ask，经 HTTPS 私有中继传到手机。手机 MT5 不能运行 EA。此通道只读，不下单；需要先部署仓库内的 Cloudflare Worker 与 KV。",
+            11f,
+            muted
+        )
+        mt5BridgeUrlInput = EditText(this).apply {
+            hint = "Worker HTTPS 地址，例如 https://your-worker.workers.dev"
+            setSingleLine(true)
+            setTextColor(white)
+            setHintTextColor(muted)
+            setPadding(dp(12), dp(8), dp(12), dp(8))
+            setBackgroundColor(panel)
+            setText(prefs.getString("mt5_bridge_url", "").orEmpty())
+        }
+        mt5BridgeCard.addView(mt5BridgeUrlInput, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) })
+        mt5BridgeReadTokenInput = makeSecretInput("输入只读 READ token（不是 WRITE token）")
+        if (EncryptedApiKeyStore.get(this, "mt5_bridge_read_token").isNotBlank()) {
+            mt5BridgeReadTokenInput.hint = "只读令牌已加密保存；留空继续使用"
+        }
+        mt5BridgeCard.addView(mt5BridgeReadTokenInput, LinearLayout.LayoutParams(-1, dp(52)).apply { bottomMargin = dp(8) })
+        mt5BridgeStatusText = addLabel(mt5BridgeCard, "状态：桥接尚未启动", 12f, gold)
+        val bridgeButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addButton(bridgeButtons, "保存桥接设置") {
+            val url = mt5BridgeUrlInput.text.toString().trim().trimEnd('/')
+            val token = mt5BridgeReadTokenInput.text.toString().trim()
+            if (!url.startsWith("https://")) {
+                mt5BridgeStatusText.text = "请填写已部署的 HTTPS Worker 地址。"
+                mt5BridgeStatusText.setTextColor(red)
+            } else if (token.isNotBlank() && token.length < 16) {
+                mt5BridgeStatusText.text = "只读令牌至少需要 16 个字符。"
+                mt5BridgeStatusText.setTextColor(red)
+            } else {
+                prefs.edit().putString("mt5_bridge_url", url).apply()
+                if (token.isNotBlank()) EncryptedApiKeyStore.save(this, "mt5_bridge_read_token", token)
+                mt5BridgeReadTokenInput.text.clear()
+                mt5BridgeReadTokenInput.hint = "只读令牌已加密保存；留空继续使用"
+                mt5BridgeStatusText.text = "设置已保存。请启动桥接读取；需要部署服务端并运行桌面 MT5 EA。"
+                mt5BridgeStatusText.setTextColor(green)
+            }
+        }
+        addButton(bridgeButtons, "开始读取", true) {
+            val url = mt5BridgeUrlInput.text.toString().trim().ifBlank {
+                prefs.getString("mt5_bridge_url", "").orEmpty()
+            }
+            val token = EncryptedApiKeyStore.get(this, "mt5_bridge_read_token")
+            if (!url.startsWith("https://") || token.isBlank()) {
+                mt5BridgeStatusText.text = "请先填写并保存 HTTPS Worker 地址与 READ token。"
+                mt5BridgeStatusText.setTextColor(red)
+            } else {
+                prefs.edit().putString("mt5_bridge_url", url.trimEnd('/')).apply()
+                mt5BridgePolling = true
+                lastMt5BridgeTimestamp = 0L
+                handler.removeCallbacks(mt5BridgePollRunnable)
+                mt5BridgeStatusText.text = "正在连接行情桥，等待 MT5 EA 推送第一笔有效 Tick……"
+                mt5BridgeStatusText.setTextColor(gold)
+                handler.post(mt5BridgePollRunnable)
+            }
+        }
+        addButton(bridgeButtons, "停止") {
+            mt5BridgePolling = false
+            handler.removeCallbacks(mt5BridgePollRunnable)
+            mt5BridgeStatusText.text = "已停止桥接轮询。"
+            mt5BridgeStatusText.setTextColor(muted)
+        }
+        mt5BridgeCard.addView(bridgeButtons)
+        settingsPage.addView(mt5BridgeCard)
 
         val statusCard = makeCard()
         addLabel(statusCard, "连接状态", 14f, muted, true)
