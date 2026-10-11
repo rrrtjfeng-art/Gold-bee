@@ -24,13 +24,15 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
             flags = AccessibilityServiceInfo.FLAG_INCLUDE_NOT_IMPORTANT_VIEWS
             notificationTimeout = 500
-            packageNames = arrayOf(MT5_PACKAGE)
+            packageNames = null
         }
         super.onServiceConnected()
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-        if (event == null || event.packageName?.toString() != MT5_PACKAGE) return
+        if (event == null) return
+        val eventPackage = event.packageName?.toString().orEmpty()
+        if (!isSupportedMt5Package(eventPackage)) return
         val now = SystemClock.elapsedRealtime()
         if (now - lastProcessedAt < MIN_PROCESS_INTERVAL_MS) return
         lastProcessedAt = now
@@ -70,6 +72,18 @@ class Mt5ScreenAccessibilityService : AccessibilityService() {
         }
         editor.apply()
         PaperTradeMonitor.checkAndUpdate(this)
+    }
+
+    private fun isSupportedMt5Package(packageName: String): Boolean {
+        if (packageName == MT5_PACKAGE || packageName == "net.metaquotes.metatrader5ce") return true
+        val appLabel = runCatching {
+            val appInfo = packageManager.getApplicationInfo(packageName, 0)
+            packageManager.getApplicationLabel(appInfo).toString()
+        }.getOrDefault("")
+        return appLabel.contains("MetaTrader 5", ignoreCase = true) ||
+            appLabel.equals("MT5", ignoreCase = true) ||
+            packageName.contains("metatrader", ignoreCase = true) ||
+            packageName.contains("metaquotes", ignoreCase = true)
     }
 
     private fun collectNodeText(
