@@ -2291,9 +2291,9 @@ class MainActivity : AppCompatActivity() {
         val monitorFresh = quoteSource in setOf("ACCESSIBILITY", "SCREEN_OCR") &&
             quoteAge in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
         val monitorLine = if (monitorFresh) {
-            "自动 SL/TP 监控：屏幕报价观察正常。$monitorStatus"
+            "前台模拟 SL/TP 监控：最近屏幕报价在 3 秒内；Gold-bee 必须保持前台运行，并持续取得新报价。$monitorStatus"
         } else {
-            "自动 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 并启用只读读取或屏幕 OCR。"
+            "模拟 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 更新报价；应用在后台或屏幕停止更新时不保证监控。"
         }
         if (trade?.status == PaperTradeStatus.OPEN) {
             val closeSide = latestPaperCloseSide()
