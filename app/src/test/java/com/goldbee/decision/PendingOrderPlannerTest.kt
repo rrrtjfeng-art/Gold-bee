@@ -15,7 +15,8 @@ class PendingOrderPlannerTest {
             atrM5 = 4.0,
             structuralStop = 4090.0,
             structuralTarget = 4125.0,
-            preferBreakout = false
+            preferBreakout = false,
+            ema20Price = 4099.0
         )
         assertNotNull(plan)
         assertEquals(PendingOrderType.BUY_LIMIT, plan!!.type)
@@ -32,9 +33,10 @@ class PendingOrderPlannerTest {
             direction = TradeDirection.SELL,
             currentPrice = 4100.0,
             atrM5 = 4.0,
-            structuralStop = 4110.0,
+            structuralStop = 4105.0,
             structuralTarget = 4075.0,
-            preferBreakout = true
+            preferBreakout = true,
+            breakoutLevel = 4097.0
         )
         assertNotNull(plan)
         assertEquals(PendingOrderType.SELL_STOP, plan!!.type)
@@ -53,7 +55,8 @@ class PendingOrderPlannerTest {
                 atrM5 = 4.0,
                 structuralStop = 4090.0,
                 structuralTarget = 4105.0,
-                preferBreakout = false
+                preferBreakout = false,
+                ema20Price = 4099.0
             )
         )
     }
