@@ -39,6 +39,20 @@ object PendingOrderSafetyCheck {
             return reject("当前点差占 M5 ATR 过高，等待点差收窄。")
         }
 
+        // A candidate is only valid while price remains inside the setup's
+        // invalidation boundary. Checking this at review time prevents showing
+        // a pending order after the original market premise has already failed.
+        val midPrice = (bid + ask) / 2.0
+        val invalidated = when (plan.type) {
+            PendingOrderType.BUY_LIMIT -> midPrice >= plan.cancelIfPriceBeyond
+            PendingOrderType.SELL_LIMIT -> midPrice <= plan.cancelIfPriceBeyond
+            PendingOrderType.BUY_STOP -> midPrice <= plan.cancelIfPriceBeyond
+            PendingOrderType.SELL_STOP -> midPrice >= plan.cancelIfPriceBeyond
+        }
+        if (invalidated) {
+            return reject("价格已越过该方案的失效边界，原条件单逻辑作废；必须重新分析，禁止继续挂单。")
+        }
+
         val entryDistanceFromExecutableSide = when (plan.type) {
             PendingOrderType.BUY_LIMIT -> ask - plan.entry
             PendingOrderType.SELL_LIMIT -> plan.entry - bid
