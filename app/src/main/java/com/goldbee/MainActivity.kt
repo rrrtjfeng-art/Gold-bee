@@ -2,6 +2,7 @@ package com.goldbee
 
 import android.graphics.Color
 import android.content.ComponentName
+import android.view.accessibility.AccessibilityManager
 import android.provider.Settings
 import android.media.projection.MediaProjectionManager
 import android.os.Bundle
@@ -294,10 +295,16 @@ class MainActivity : AppCompatActivity() {
             contentResolver,
             Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
         ).orEmpty()
-        val serviceEnabled = enabledServices.split(':').any { flattened ->
-            ComponentName.unflattenFromString(flattened)?.className ==
-                Mt5ScreenAccessibilityService::class.java.name
+        val componentName = ComponentName(this, Mt5ScreenAccessibilityService::class.java)
+        val enabledBySecureSetting = enabledServices.split(':').any { flattened ->
+            ComponentName.unflattenFromString(flattened) == componentName ||
+                flattened.endsWith("/" + Mt5ScreenAccessibilityService::class.java.name)
         }
+        val accessibilityManager = getSystemService(ACCESSIBILITY_SERVICE) as AccessibilityManager
+        val enabledByManager = accessibilityManager
+            .getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { it.resolveInfo.serviceInfo.name == Mt5ScreenAccessibilityService::class.java.name }
+        val serviceEnabled = enabledBySecureSetting || enabledByManager
         val observation = getSharedPreferences(
             Mt5ScreenAccessibilityService.PREFS_NAME,
             MODE_PRIVATE
@@ -1903,17 +1910,38 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openMt5ForManualOrder() {
-        val intent = packageManager.getLaunchIntentForPackage("net.metaquotes.metatrader5")
+        val candidates = linkedSetOf(
+            "net.metaquotes.metatrader5",
+            "net.metaquotes.metatrader5ce"
+        )
+        val officialIntent = candidates.firstNotNullOfOrNull { packageName ->
+            packageManager.getLaunchIntentForPackage(packageName)
+        }
+        val launcherIntent = packageManager.queryIntentActivities(
+            android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_LAUNCHER),
+            0
+        ).firstOrNull { resolve ->
+            val label = runCatching {
+                resolve.loadLabel(packageManager).toString()
+            }.getOrDefault("")
+            val packageName = resolve.activityInfo.packageName
+            packageName in candidates ||
+                label.contains("MetaTrader 5", ignoreCase = true) ||
+                label.equals("MT5", ignoreCase = true)
+        }?.let { resolve ->
+            packageManager.getLaunchIntentForPackage(resolve.activityInfo.packageName)
+        }
+        val intent = officialIntent ?: launcherIntent
         if (intent == null) {
             android.widget.Toast.makeText(
                 this,
-                "未找到官方 MT5 应用。请先安装/打开 MT5；Gold-bee 不会替你提交订单。",
+                "系统没有找到可启动的 MT5 应用。若你安装的是经纪商定制版，请先手动打开该 MT5；Gold-bee 不会替你提交订单。",
                 android.widget.Toast.LENGTH_LONG
             ).show()
             return
         }
         runCatching { startActivity(intent) }.onFailure {
-            android.widget.Toast.makeText(this, "无法打开 MT5：请手动切换到 MT5。", android.widget.Toast.LENGTH_LONG).show()
+            android.widget.Toast.makeText(this, "无法自动打开 MT5，请从手机桌面手动启动。", android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
