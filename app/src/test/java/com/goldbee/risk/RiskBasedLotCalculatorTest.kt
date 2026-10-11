@@ -29,7 +29,7 @@ class RiskBasedLotCalculatorTest {
     @Test
     fun roundsLotsDownSoEstimatedLossDoesNotExceedBudget() {
         val estimate = RiskBasedLotCalculator.calculate(
-            balanceUsd = 1000.0,
+            balanceUsd = 10000.0,
             riskPercent = 1.0,
             entry = 4100.0,
             stopLoss = 4090.0,
