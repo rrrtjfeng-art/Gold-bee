@@ -62,6 +62,7 @@ data class PaperTradeAttempt(
 
 object PaperTradingEngine {
     const val MAX_QUOTE_AGE_MILLIS = 3_000L
+    const val MAX_SIGNAL_AGE_MILLIS = 120_000L
 
     fun open(
         signal: PaperSignal,
@@ -75,6 +76,10 @@ object PaperTradingEngine {
     ): PaperTradeAttempt {
         val quoteError = validateQuote(quote, nowMillis)
         if (quoteError != null) return PaperTradeAttempt(null, quoteError)
+        val signalAge = nowMillis - signal.createdAtMillis
+        if (signalAge !in 0L..MAX_SIGNAL_AGE_MILLIS) {
+            return PaperTradeAttempt(null, "交易信号已过期或时间异常；请重新分析，不得使用旧信号追价。")
+        }
         if (!signal.plannedEntry.isFinite() || signal.plannedEntry <= 0.0 ||
             !signal.stopLoss.isFinite() || signal.stopLoss <= 0.0 ||
             !signal.takeProfit.isFinite() || signal.takeProfit <= 0.0
