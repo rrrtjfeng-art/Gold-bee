@@ -4,6 +4,8 @@
     <queries>
         <!-- Android 11+ package visibility: allow launching official MT5. -->
         <package android:name="net.metaquotes.metatrader5" />
+        <!-- MetaTrader 5 alternative regional package. -->
+        <package android:name="net.metaquotes.metatrader5ce" />
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
