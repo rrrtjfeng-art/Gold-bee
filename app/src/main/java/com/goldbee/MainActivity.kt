@@ -331,6 +331,15 @@ class MainActivity : AppCompatActivity() {
             val lastEventAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_AT, 0L)
             val eventCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_EVENT_COUNT, 0)
             val eventTextCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_TEXT_COUNT, 0)
+            val nodeCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_NODE_COUNT, 0)
+            val nodeTextCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_NODE_TEXT_COUNT, 0)
+            val descriptionCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_DESCRIPTION_COUNT, 0)
+            val eventTextItems = observation.getInt(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_EVENT_TEXT_COUNT, 0)
+            val rootWasNull = observation.getBoolean(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_ROOT_NULL, false)
+            val hasSymbol = observation.getBoolean(Mt5ScreenAccessibilityService.KEY_LAST_PARSE_HAS_SYMBOL, false)
+            val hasBid = observation.getBoolean(Mt5ScreenAccessibilityService.KEY_LAST_PARSE_HAS_BID, false)
+            val hasAsk = observation.getBoolean(Mt5ScreenAccessibilityService.KEY_LAST_PARSE_HAS_ASK, false)
+            val nodeDiagnostic = "节点诊断：rootInActiveWindow=${if (rootWasNull) "空" else "非空"}；遍历节点 $nodeCount；含文字节点 $nodeTextCount；含描述节点 $descriptionCount；事件文字项 $eventTextItems；解析品种=${if (hasSymbol) "是" else "否"}、Bid=${if (hasBid) "是" else "否"}、Ask=${if (hasAsk) "是" else "否"}。这里只保存计数和识别结果，不保存原始屏幕文字。"
             val eventPackage = observation.getString(Mt5ScreenAccessibilityService.KEY_LAST_EVENT_PACKAGE, "").orEmpty()
             val lastAnyEventAt = observation.getLong(Mt5ScreenAccessibilityService.KEY_LAST_ANY_EVENT_AT, 0L)
             val anyEventCount = observation.getInt(Mt5ScreenAccessibilityService.KEY_ANY_EVENT_COUNT, 0)
@@ -359,7 +368,15 @@ class MainActivity : AppCompatActivity() {
                     "状态：$connectedText\n请从最近任务中彻底关闭 Gold Bee 后重新打开；再把官方 MT5 放到前台，切换「报价」与「图表」页面，然后返回此页。此状态不是市场休市判断。" 
                 }
             }
-            mt5ObservationText.text = if (ocrStatus.isBlank()) diagnostic else "$diagnostic\n$ocrStatus"
+            mt5ObservationText.text = buildString {
+                append(diagnostic)
+                appendLine()
+                append(nodeDiagnostic)
+                if (ocrStatus.isNotBlank()) {
+                    appendLine()
+                    append(ocrStatus)
+                }
+            }
             mt5ObservationText.setTextColor(gold)
             return
         }
