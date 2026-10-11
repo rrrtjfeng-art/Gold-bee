@@ -200,7 +200,9 @@ class MainActivity : AppCompatActivity() {
         override fun run() {
             if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) return
             refreshMt5Observation()
-            refreshPaperTradeStatus()
+            // Re-evaluate open paper positions against the newest validated MT5
+            // screen quote. Refreshing the summary alone never checked SL/TP.
+            updatePaperTradeFromQuote()
             handler.postDelayed(this, OBSERVER_REFRESH_INTERVAL_MS)
         }
     }
