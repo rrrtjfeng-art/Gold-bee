@@ -2087,7 +2087,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun recordPaperClosure(trade: PaperTrade) {
-        PaperTradeHistoryStore.append(this, trade)
+        if (!PaperTradeHistoryStore.append(this, trade)) return
         val pnl = trade.pnlUsd ?: return
         val wins = prefs.getInt("paper_money_wins", 0) + if (pnl > 0.0) 1 else 0
         val losses = prefs.getInt("paper_money_losses", 0) + if (pnl < 0.0) 1 else 0
@@ -2291,9 +2291,9 @@ class MainActivity : AppCompatActivity() {
         val monitorFresh = quoteSource in setOf("ACCESSIBILITY", "SCREEN_OCR") &&
             quoteAge in 0L..PaperTradingEngine.MAX_QUOTE_AGE_MILLIS
         val monitorLine = if (monitorFresh) {
-            "前台模拟 SL/TP 监控：最近屏幕报价在 3 秒内；Gold-bee 必须保持前台运行，并持续取得新报价。$monitorStatus"
+            "本机模拟 SL/TP 监控：最近屏幕报价在 3 秒内。依赖 MT5 屏幕读取服务和持续报价；不是券商服务器止损，Android 省电或服务停止可能中断。$monitorStatus"
         } else {
-            "模拟 SL/TP 监控已暂停：没有 3 秒内的 MT5 屏幕报价。请切换到 MT5 更新报价；应用在后台或屏幕停止更新时不保证监控。"
+            "模拟 SL/TP 检查暂停：没有 3 秒内的 MT5 屏幕报价。请恢复只读读取/OCR 并确认报价更新；本机监控不是券商服务器止损。"
         }
         if (trade?.status == PaperTradeStatus.OPEN) {
             val closeSide = latestPaperCloseSide()
