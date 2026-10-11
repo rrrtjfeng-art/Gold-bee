@@ -1699,9 +1699,21 @@ class MainActivity : AppCompatActivity() {
             }
             val pendingAlternatives = run {
                 val atrM5 = latestAnalysis?.m5?.indicators?.atr14
-                if (atrM5 == null || !atrM5.isFinite() || atrM5 <= 0.0) {
+                val mt5Quote = readFreshPaperQuote()
+                val quoteAge = mt5Quote?.let { System.currentTimeMillis() - it.timestampMillis }
+                val quoteSymbol = mt5Quote?.symbol.orEmpty().uppercase().replace("/", "").trim()
+                if (mt5Quote == null || quoteSymbol !in setOf("XAUUSD", "GOLD") ||
+                    quoteAge == null || quoteAge !in 0L..3000L ||
+                    !mt5Quote.bid.isFinite() || !mt5Quote.ask.isFinite() ||
+                    mt5Quote.bid <= 0.0 || mt5Quote.ask <= mt5Quote.bid
+                ) {
+                    "没有可验证的 3 秒内 MT5 Bid/Ask；为避免把旧 Entry 当成当前价，暂不生成 LIMIT/STOP 候选。切回 MT5 更新报价后重新分析。"
+                } else if (atrM5 == null || !atrM5.isFinite() || atrM5 <= 0.0) {
                     "M5 ATR 不可用，暂不计算 LIMIT/STOP 候选。"
                 } else {
+                    // Pending entries must be anchored to the current executable side,
+                    // not setup.entry, which is the primary setup's planned entry.
+                    val executablePrice = if (setup.direction == TradeDirection.BUY) mt5Quote.ask else mt5Quote.bid
                     val recentM5 = latestCandles[Timeframe.M5].orEmpty().dropLast(1).takeLast(12)
                     val breakoutLevel = if (setup.direction == TradeDirection.BUY) {
                         recentM5.maxOfOrNull { it.high }
@@ -1711,7 +1723,7 @@ class MainActivity : AppCompatActivity() {
                     listOf(false, true).mapNotNull { breakout ->
                         PendingOrderPlanner.plan(
                             direction = setup.direction,
-                            currentPrice = setup.entry,
+                            currentPrice = executablePrice,
                             atrM5 = atrM5,
                             structuralStop = setup.stopLoss,
                             structuralTarget = setup.takeProfit,
@@ -1722,11 +1734,11 @@ class MainActivity : AppCompatActivity() {
                     }.joinToString("\n") { order ->
                         String.format(
                             Locale.US,
-                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\n取消边界 %.3f\n%s\n经纪商最小挂单距离尚未核验；下单前必须在 MT5 检查。",
+                            "%s · Entry %.3f · SL %.3f · TP1 %.3f（1:%.2f）· TP2 %.3f（1:%.2f）· 3 根 M5 K 线后过期\n取消边界 %.3f\n%s\n报价年龄 %d ms；经纪商最小挂单距离尚未核验，下单前必须在 MT5 检查。",
                             order.type.label, order.entry, order.stopLoss,
                             order.takeProfit1, order.riskReward1,
                             order.takeProfit2, order.riskReward2,
-                            order.cancelIfPriceBeyond, order.rationale
+                            order.cancelIfPriceBeyond, order.rationale, quoteAge
                         )
                     }.ifBlank { "当前结构空间不足以生成合格条件单；不要强行挂单。" }
                 }
